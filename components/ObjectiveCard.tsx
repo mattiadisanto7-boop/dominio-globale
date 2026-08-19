@@ -24,6 +24,16 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
       </div>
       <div className="objective-map-wrap">
         <svg className="objective-map" viewBox={BOARD_VIEW_BOX} aria-label={objective ? `Mappa dell'obiettivo ${objective.number}` : "Obiettivo non ancora assegnato"}>
+          <defs>
+            <pattern id="objectiveMissingPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+              <rect width="8" height="8" fill="#d92338" />
+              <rect width="2.4" height="8" fill="#ff727f" fillOpacity=".6" />
+            </pattern>
+            <pattern id="objectiveSecuredPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+              <rect width="8" height="8" fill="#15975f" />
+              <rect width="2.4" height="8" fill="#80efb6" fillOpacity=".62" />
+            </pattern>
+          </defs>
           <rect width="750" height="519" rx="18" />
           <g className="objective-routes" aria-hidden="true">
             {SEA_ROUTE_PATHS.map((path) => <path key={path} d={path} />)}
@@ -38,14 +48,18 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
         </svg>
         {objective && <span className="objective-number">{objective.number}</span>}
       </div>
+      <div className="objective-status-ribbon">
+        <span className="secured"><b>{secured.length}</b> GIÀ TUOI</span>
+        <span className="missing"><b>{Math.max(0, (objective?.territoryIds.length ?? 0) - secured.length)}</b> DA CONQUISTARE</span>
+      </div>
       <div className="objective-copy">
         <div><h3>{objective?.title ?? "Missione in preparazione"}</h3><b>{securedPoints}<small>/86</small></b></div>
         <p>{objective?.description ?? "La carta verrà assegnata all'inizio della partita."}</p>
       </div>
       <div className="objective-progress" aria-label={`Obiettivo completato al ${percent}%`}>
-        <span style={{ width: `${percent}%`, background: player.color }} />
+        <span style={{ width: `${percent}%` }} />
       </div>
-      <div className="objective-legend"><span><i className="missing" /> Da conquistare</span><span><i className="secured" style={{ background: player.color }} /> Conquistato</span><b>{secured.length}/{objective?.territoryIds.length ?? 0} territori</b></div>
+      <div className="objective-legend"><span><i className="missing" /> Rosso = da conquistare</span><span><i className="secured" /> Verde = già tuo</span><b>{secured.length}/{objective?.territoryIds.length ?? 0} territori</b></div>
       <dl className="player-stats">
         <div><dt>{player.stats.attacks}</dt><dd>attacchi</dd></div>
         <div><dt>{player.stats.territoriesConquered}</dt><dd>conquiste</dd></div>

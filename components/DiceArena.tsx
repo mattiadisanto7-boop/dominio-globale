@@ -77,7 +77,7 @@ export default function DiceArena({ state }: { state: PublicGameState }) {
           <span>Attacco −{report.attackerLosses} · Difesa −{report.defenderLosses}</span>
         </div>
       )}
-      {!report && <p className="dice-waiting">In attesa del lancio di difesa…</p>}
+      {!report && <p className="dice-waiting">Lancio automatico della difesa…</p>}
     </div>
   );
 }

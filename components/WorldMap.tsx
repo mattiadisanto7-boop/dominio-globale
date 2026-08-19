@@ -51,7 +51,7 @@ export default function WorldMap({
         <div className="map-objective-key" aria-label={`Obiettivo ${me.objective.number}: ${objectiveSecured.size} territori conquistati su ${objectiveIds.length}`}>
           <b>OBIETTIVO {me.objective.number}</b>
           <span><i className="mission-missing" /> da conquistare</span>
-          <span><i className="mission-secured" /> conquistato</span>
+          <span><i className="mission-secured" /> già tuo</span>
           <strong>{objectiveSecured.size}/{objectiveIds.length}</strong>
         </div>
       )}
@@ -64,6 +64,14 @@ export default function WorldMap({
             <feGaussianBlur stdDeviation="1.6" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
+          <pattern id="missionMissingPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+            <rect width="7" height="7" fill="#d71934" fillOpacity=".34" />
+            <rect width="2" height="7" fill="#ff9aa2" fillOpacity=".42" />
+          </pattern>
+          <pattern id="missionSecuredPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+            <rect width="7" height="7" fill="#10a967" fillOpacity=".3" />
+            <rect width="2" height="7" fill="#9cffcf" fillOpacity=".4" />
+          </pattern>
           <marker id="attackArrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
             <path d="M0 0 L0 6 L6 3 Z" fill="#ffe5a5" />
           </marker>
@@ -135,21 +143,24 @@ export default function WorldMap({
             return (
               <g key={territory.id} style={{ "--owner-color": ownerColor } as MapStyle}>
                 <g className="army-token" transform={`translate(${center.x} ${center.y - 5.5})`} filter="url(#tokenShadow)">
-                  <circle className="token-ring" r="8.6" />
-                  <circle className="token-core" r="6.5" />
-                  <text className="army-count" textAnchor="middle" y="2.5">{current.armies}</text>
+                  <g className="tank-piece" transform="translate(3 0) rotate(-10)">
+                    <rect className="tank-track" x="-7.5" y="-4.8" width="15" height="9.6" rx="3.2" />
+                    <path className="tank-treads" d="M-5.2-3.1H5.2M-5.8 0H5.8M-5.2 3.1H5.2" />
+                    <rect className="tank-hull" x="-5.8" y="-3.4" width="11.6" height="6.8" rx="2" />
+                    <circle className="tank-turret" cx="1" cy="0" r="3" />
+                    <path className="tank-barrel" d="M3-1.1 10.5-5.1" />
+                  </g>
+                  <text className="army-count" textAnchor="middle" x="-8.5" y="3">{current.armies}</text>
                 </g>
                 <g className="territory-caption" transform={`translate(${center.x} ${center.y + 9})`}>
                   <rect x="-15" y="-4.5" width="30" height="9" rx="3" />
                   <text textAnchor="middle" y="2">{territory.short} <tspan>· {territory.value}</tspan></text>
                 </g>
                 {mission && (
-                  <path
-                    className={`objective-pin ${secured ? "secured" : "missing"}`}
-                    transform={`translate(${center.x + 8.5} ${center.y - 13})`}
-                    d="M0-4 L4 0 L0 4 L-4 0 Z"
-                    filter="url(#missionGlow)"
-                  />
+                  <g className={`objective-pin ${secured ? "secured" : "missing"}`} transform={`translate(${center.x + 10.5} ${center.y - 13})`} filter="url(#missionGlow)">
+                    <circle r="4.7" />
+                    <text textAnchor="middle" y="2.1">{secured ? "✓" : "!"}</text>
+                  </g>
                 )}
               </g>
             );

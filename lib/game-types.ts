@@ -45,6 +45,8 @@ export type GamePlayer = {
   eliminatedBy?: string;
   setupPool: number;
   cards: TerritoryCard[];
+  lastDrawnCard?: TerritoryCard;
+  lastDrawnAt?: number;
   objective?: Objective;
   stats: PlayerStats;
 };
@@ -101,7 +103,7 @@ export type GameSettings = {
   maxPlayers: 2 | 3 | 4 | 5 | 6;
   mode: GameMode;
   timeLimitMinutes: 0 | 45 | 60 | 90;
-  defense: "interactive";
+  defense: "automatic" | "interactive";
 };
 
 export type GameState = {
@@ -155,13 +157,12 @@ export type GameAction =
   | { type: "updateSettings"; settings: Partial<GameSettings> }
   | { type: "startGame" }
   | { type: "kickPlayer"; playerId: string }
-  | { type: "placeSetup"; territoryId: TerritoryId; amount: number }
+  | { type: "placeSetup"; territoryId: TerritoryId }
   | { type: "autoSetup" }
   | { type: "deploy"; territoryId: TerritoryId; amount: number }
   | { type: "tradeCards"; cardIds: string[] }
   | { type: "beginAttack" }
   | { type: "attack"; from: TerritoryId; to: TerritoryId }
-  | { type: "defend" }
   | { type: "moveAfterConquest"; amount: number }
   | { type: "endAttack" }
   | { type: "fortify"; from: TerritoryId; to: TerritoryId; amount: number }

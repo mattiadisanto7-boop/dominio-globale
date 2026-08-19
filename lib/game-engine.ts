@@ -188,7 +188,7 @@ const initializeGame = (state: GameState) => {
   state.turnOrder = shuffle(players.map((player) => player.id));
   state.turnIndex = 0;
   state.round = 1;
-  state.currentPlayerId = undefined;
+  state.currentPlayerId = state.turnOrder[0];
   state.phase = "setup";
   state.startedAt = Date.now();
   state.deadlineAt = state.settings.timeLimitMinutes
@@ -206,11 +206,14 @@ const initializeGame = (state: GameState) => {
   state.winnerId = undefined;
   state.victoryReason = undefined;
   state.settings.mode = "missioni";
+  state.settings.defense = "automatic";
 
   players.forEach((player) => {
     player.status = "active";
     player.eliminatedBy = undefined;
     player.cards = [];
+    player.lastDrawnCard = undefined;
+    player.lastDrawnAt = undefined;
     player.stats = stats();
     player.objective = undefined;
   });
@@ -242,11 +245,28 @@ const initializeGame = (state: GameState) => {
   players.forEach((player, index) => {
     player.objective = objectives[index];
   });
-  logItem(state, "I territori e le carte obiettivo Challenge da 86 punti sono stati assegnati.", "turn");
+  logItem(
+    state,
+    `Territori e obiettivi assegnati. ${playerName(state, state.currentPlayerId)} apre lo schieramento a blocchi di 3.`,
+    "turn",
+  );
 };
 
 const allSetupComplete = (state: GameState) =>
   state.players.filter((player) => player.status === "active").every((player) => player.setupPool === 0);
+
+const advanceSetupTurn = (state: GameState) => {
+  for (let offset = 1; offset <= state.turnOrder.length; offset += 1) {
+    const nextIndex = (state.turnIndex + offset) % state.turnOrder.length;
+    const next = playerById(state, state.turnOrder[nextIndex]);
+    if (next.status === "active" && next.setupPool > 0) {
+      state.turnIndex = nextIndex;
+      state.currentPlayerId = next.id;
+      return;
+    }
+  }
+  throw new GameRuleError("Impossibile determinare il prossimo schieramento.");
+};
 
 const beginFirstTurn = (state: GameState) => {
   const firstId = state.turnOrder[0];
@@ -269,6 +289,8 @@ const drawCard = (state: GameState, player: GamePlayer) => {
   const card = state.deck.pop();
   if (card) {
     player.cards.push(card);
+    player.lastDrawnCard = structuredClone(card);
+    player.lastDrawnAt = Date.now();
     logItem(state, `${player.name} riceve una carta territorio.`, "cards");
   }
 };
@@ -297,6 +319,15 @@ export const validTradeSets = (cards: TerritoryCard[]) => {
     }
   }
   return sets;
+};
+
+const beginAttackWhenReady = (state: GameState, player: GamePlayer) => {
+  if (state.reinforcementPool > 0) return false;
+  if (player.cards.length >= 5 && validTradeSets(player.cards).length > 0) return false;
+  state.phase = state.resumePhase ?? "attack";
+  state.resumePhase = undefined;
+  logItem(state, `${player.name} ha completato i rinforzi: inizia automaticamente la fase d'attacco.`, "turn");
+  return true;
 };
 
 const isConnectedThroughOwned = (
@@ -530,7 +561,12 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     logItem(state, `${actor.name} ha abbandonato la partita.`, "system");
     const active = state.players.filter((player) => player.status === "active");
     if (active.length === 1) finishGame(state, active[0].id, "è l'ultima armata rimasta sulla mappa.");
-    else if (state.currentPlayerId === playerId) nextTurn(state);
+    else if (state.currentPlayerId === playerId) {
+      if (state.phase === "setup") {
+        if (allSetupComplete(state)) beginFirstTurn(state);
+        else advanceSetupTurn(state);
+      } else nextTurn(state);
+    }
     return state;
   }
 
@@ -542,29 +578,35 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
 
   if (action.type === "placeSetup") {
     assertRule(state.phase === "setup", "La fase di schieramento è terminata.");
-    assertRule(actor.status === "active", "Non sei più in partita.");
+    requireCurrentPlayer(state, playerId);
     const territory = state.territories[action.territoryId];
     assertRule(territory?.ownerId === playerId, "Puoi schierare solo nei tuoi territori.");
-    const amount = Math.floor(action.amount);
-    assertRule(amount > 0 && amount <= actor.setupPool, "Quantità di armate non valida.");
+    const amount = Math.min(3, actor.setupPool);
+    assertRule(amount > 0, "Hai già schierato tutte le armate iniziali.");
     territory.armies += amount;
     actor.setupPool -= amount;
+    logItem(state, `${actor.name} schiera ${amount} armate in ${TERRITORY_BY_ID[action.territoryId].name}.`, "turn");
     if (allSetupComplete(state)) beginFirstTurn(state);
+    else advanceSetupTurn(state);
     return state;
   }
 
   if (action.type === "autoSetup") {
     assertRule(state.phase === "setup", "La fase di schieramento è terminata.");
+    requireCurrentPlayer(state, playerId);
     assertRule(actor.setupPool > 0, "Hai già schierato tutte le armate.");
     const owned = ownedTerritories(state, playerId);
-    while (actor.setupPool > 0) {
-      const random = new Uint32Array(1);
-      crypto.getRandomValues(random);
-      state.territories[owned[random[0] % owned.length].id].armies += 1;
+    const amount = Math.min(3, actor.setupPool);
+    for (let index = 0; index < amount; index += 1) {
+      owned.sort((left, right) =>
+        state.territories[left.id].armies - state.territories[right.id].armies || left.id.localeCompare(right.id),
+      );
+      state.territories[owned[0].id].armies += 1;
       actor.setupPool -= 1;
     }
-    logItem(state, `${actor.name} ha completato lo schieramento iniziale.`);
+    logItem(state, `${actor.name} distribuisce automaticamente ${amount} armate sui territori meno presidiati.`, "turn");
     if (allSetupComplete(state)) beginFirstTurn(state);
+    else advanceSetupTurn(state);
     return state;
   }
 
@@ -597,14 +639,16 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
   }
 
   if (action.type === "deploy") {
-    requireCurrentPlayer(state, playerId);
+    const current = requireCurrentPlayer(state, playerId);
     assertRule(state.phase === "reinforce", "Non è il momento di schierare rinforzi.");
+    assertRule(current.cards.length < 5 || validTradeSets(current.cards).length === 0, "Con 5 o più carte devi prima giocare un tris.");
     const territory = state.territories[action.territoryId];
     assertRule(territory?.ownerId === playerId, "Puoi rinforzare solo i tuoi territori.");
     const amount = Math.floor(action.amount);
     assertRule(amount > 0 && amount <= state.reinforcementPool, "Quantità di armate non valida.");
     territory.armies += amount;
     state.reinforcementPool -= amount;
+    if (state.reinforcementPool === 0) beginAttackWhenReady(state, current);
     return state;
   }
 
@@ -613,9 +657,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(state.phase === "reinforce", "La fase d'attacco è già iniziata.");
     assertRule(state.reinforcementPool === 0, "Devi prima schierare tutti i rinforzi.");
     assertRule(current.cards.length < 5 || validTradeSets(current.cards).length === 0, "Con 5 o più carte devi giocare un tris.");
-    state.phase = state.resumePhase ?? "attack";
-    state.resumePhase = undefined;
-    logItem(state, `${current.name} passa alla fase d'attacco.`, "turn");
+    beginAttackWhenReady(state, current);
     return state;
   }
 
@@ -640,18 +682,9 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
       createdAt: Date.now(),
     };
     state.pendingBattle = battle;
-    if (to.ownerId === NEUTRAL_ID) resolveBattle(state, roll(defenseDiceForArmies(to.armies)));
-    return state;
-  }
-
-  if (action.type === "defend") {
-    const battle = state.pendingBattle;
-    assertRule(battle, "Non c'è un attacco da difendere.");
-    assertRule(battle.defenderId === playerId, "Questo attacco non è diretto contro di te.");
-    const territory = state.territories[battle.to];
-    const dice = defenseDiceForArmies(territory.armies);
-    assertRule(dice >= 1, "Il territorio non ha armate con cui difendersi.");
-    resolveBattle(state, roll(dice));
+    const defenseDice = defenseDiceForArmies(to.armies);
+    assertRule(defenseDice >= 1, "Il territorio non ha armate con cui difendersi.");
+    resolveBattle(state, roll(defenseDice));
     return state;
   }
 
@@ -720,6 +753,8 @@ export const sanitizeState = (state: GameState, meId: string): PublicGameState =
       ...structuredClone(player),
       cards: player.id === meId || revealAll ? structuredClone(player.cards) : [],
       cardCount: player.cards.length,
+      lastDrawnCard: player.id === meId ? structuredClone(player.lastDrawnCard) : undefined,
+      lastDrawnAt: player.id === meId ? player.lastDrawnAt : undefined,
       objective: player.id === meId || revealAll ? structuredClone(player.objective) : undefined,
     })),
     deckCount: deck.length,

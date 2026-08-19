@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import ActionPanel from "@/components/ActionPanel";
 import Brand from "@/components/Brand";
 import DiceArena, { GraphicDiceRow } from "@/components/DiceArena";
+import DrawnCardPanel from "@/components/DrawnCardPanel";
 import LobbyScreen from "@/components/LobbyScreen";
 import ObjectiveCard from "@/components/ObjectiveCard";
 import SoundControl from "@/components/SoundControl";
@@ -43,9 +44,15 @@ function formatTime(milliseconds: number) {
 
 function instruction(state: PublicGameState, meId: string) {
   const mine = state.currentPlayerId === meId;
-  if (state.phase === "setup") return "Distribuisci le armate iniziali sui tuoi territori.";
-  if (state.phase === "reinforce") return mine ? "Tocca un tuo territorio per rinforzarlo." : "L'avversario sta schierando i rinforzi.";
-  if (state.phase === "attack") return mine ? "Scegli un tuo territorio, poi un confine nemico." : "Osserva l'attacco e preparati a difendere.";
+  if (state.phase === "setup") {
+    const current = state.players.find((player) => player.id === state.currentPlayerId);
+    return mine ? "Tocca un tuo territorio: schiererai il prossimo blocco di 3 armate." : `${current?.name ?? "Il prossimo comandante"} sta schierando 3 armate.`;
+  }
+  if (state.phase === "reinforce") {
+    const me = state.players.find((player) => player.id === meId);
+    return mine ? me && me.cardCount >= 5 ? "Gioca prima il tris obbligatorio, poi schiera i rinforzi." : "Tocca un tuo territorio per rinforzarlo." : "L'avversario sta schierando i rinforzi.";
+  }
+  if (state.phase === "attack") return mine ? "Scegli un tuo territorio, poi un confine nemico." : "Osserva la battaglia: i dadi di difesa vengono lanciati automaticamente.";
   if (state.phase === "fortify") return mine ? "Sposta armate o termina il turno." : "L'avversario sta consolidando il dominio.";
   return "";
 }
@@ -99,9 +106,10 @@ function ChatDrawer({ state, meId, action }: { state: PublicGameState; meId: str
 
 export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { envelope: RoomEnvelope; onEnvelope: (value: RoomEnvelope) => void; token: string; onLeave: () => void }) {
   const { state, meId } = envelope;
+  const me = state.players.find((player) => player.id === meId)!;
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [selectedFrom, setSelectedFrom] = useState<TerritoryId>(), [selectedTo, setSelectedTo] = useState<TerritoryId>();
-  const [setupAmount, setSetupAmount] = useState(1), [deployAmount, setDeployAmount] = useState(1);
+  const [deployAmount, setDeployAmount] = useState(1);
   const [now, setNow] = useState(0), [menuOpen, setMenuOpen] = useState(false);
   const loading = useRef(false);
   const audioState = useRef({
@@ -110,6 +118,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     currentPlayerId: state.currentPlayerId,
     phase: state.phase,
     messageCount: state.messages.length,
+    myCardCount: me.cardCount,
   });
 
   useEffect(() => {
@@ -122,10 +131,12 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       gameSound.play("dice");
       timers.push(window.setTimeout(() => gameSound.play(state.lastBattle?.conquered ? "conquest" : "battle"), 760));
     }
+    const drewCard = me.cardCount > previous.myCardCount;
+    if (drewCard) gameSound.play("cards");
     if (state.phase === "gameover" && previous.phase !== "gameover") {
       timers.push(window.setTimeout(() => gameSound.play("victory"), 360));
     } else if (state.currentPlayerId && state.currentPlayerId !== previous.currentPlayerId) {
-      gameSound.play("turn");
+      timers.push(window.setTimeout(() => gameSound.play("turn"), drewCard ? 480 : 0));
     }
     if (state.messages.length > previous.messageCount && state.messages.at(-1)?.playerId !== meId) {
       gameSound.play("message");
@@ -136,9 +147,10 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       currentPlayerId: state.currentPlayerId,
       phase: state.phase,
       messageCount: state.messages.length,
+      myCardCount: me.cardCount,
     };
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.messages, state.pendingBattle?.createdAt, state.phase]);
+  }, [me.cardCount, meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.messages, state.pendingBattle?.createdAt, state.phase]);
 
   const load = useCallback(async (silent = true) => {
     if (loading.current) return; loading.current = true;
@@ -183,9 +195,9 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   const onTerritory = (id: TerritoryId) => {
     gameSound.play("ui");
     const territory = state.territories[id], me = state.players.find((player) => player.id === meId)!;
-    if (state.phase === "setup" && territory.ownerId === meId && me.setupPool > 0) { action({ type: "placeSetup", territoryId: id, amount: Math.max(1, Math.min(setupAmount, me.setupPool)) }); return; }
+    if (state.phase === "setup" && state.currentPlayerId === meId && territory.ownerId === meId && me.setupPool > 0) { action({ type: "placeSetup", territoryId: id }); return; }
     if (state.currentPlayerId !== meId || busy) return;
-    if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
+    if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0 && me.cardCount < 5) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
     if (state.phase === "attack" && !state.pendingBattle && !state.pendingMove) {
       if (!selectedFrom) { if (territory.ownerId === meId && territory.armies > 1) setSelectedFrom(id); }
       else if (id === selectedFrom) { setSelectedFrom(undefined); setSelectedTo(undefined); }
@@ -201,7 +213,6 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   };
 
   if (state.phase === "lobby") return <LobbyScreen envelope={envelope} action={action} busy={busy} onLeave={onLeave} />;
-  const me = state.players.find((player) => player.id === meId)!;
   const remaining = state.deadlineAt && now > 0 ? state.deadlineAt - now : undefined;
 
   return (
@@ -215,14 +226,16 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
           <div className="board-heading"><div><span className="live-dot" /> {instruction(state, meId)}</div><div className="continent-bonuses">{(Object.keys(CONTINENTS) as ContinentId[]).map((id) => <span key={id} style={{ "--continent-color": CONTINENTS[id].color } as React.CSSProperties}>{CONTINENTS[id].name} +{CONTINENTS[id].bonus}</span>)}</div></div>
           <div className="board-stage"><WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} /><DiceArena state={state} /></div>
           {state.lastBattle && <div className="last-battle"><span>ULTIMO LANCIO</span><b>{TERRITORY_BY_ID[state.lastBattle.from].short} → {TERRITORY_BY_ID[state.lastBattle.to].short}</b><GraphicDiceRow values={state.lastBattle.attackerDice} tone="attack" /><GraphicDiceRow values={state.lastBattle.defenderDice} tone="defense" /><small>{state.lastBattle.attackerLosses} perdite attacco · {state.lastBattle.defenderLosses} difesa</small></div>}
-          <div className="under-board-grid"><ObjectiveCard state={state} player={me} /><ActivityLog state={state} /></div>
+          <div className="under-board-grid activity-only"><ActivityLog state={state} /></div>
         </section>
         <aside className="control-column">
-          <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} setupAmount={setupAmount} setSetupAmount={setSetupAmount} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />
+          <DrawnCardPanel player={me} />
+          <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />
           {remaining !== undefined && remaining <= 0 && state.phase !== "gameover" && <button className="danger-button full-button" onClick={() => action({ type: "claimTimeVictory" })}>Calcola il vincitore ai punti</button>}
           {error && <div className="game-error" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         </aside>
       </div>
+      <section className="bottom-objective" aria-label="La tua carta obiettivo"><ObjectiveCard state={state} player={me} /></section>
       <ConquestOverlay state={state} meId={meId} action={action} busy={busy} /><ChatDrawer state={state} meId={meId} action={action} />
     </main>
   );

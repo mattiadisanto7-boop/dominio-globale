@@ -66,7 +66,14 @@ class GameSoundEngine {
     oscillator.stop(start + duration + 0.03);
   }
 
-  private noise(delay: number, duration: number, volume = 0.12) {
+  private noise(
+    delay: number,
+    duration: number,
+    volume = 0.12,
+    frequency = 760,
+    type: BiquadFilterType = "bandpass",
+    q = 0.65,
+  ) {
     if (!this.context || !this.master) return;
     const sampleRate = this.context.sampleRate;
     const buffer = this.context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
@@ -79,9 +86,9 @@ class GameSoundEngine {
     const gain = this.context.createGain();
     const start = this.context.currentTime + delay;
     source.buffer = buffer;
-    filter.type = "bandpass";
-    filter.frequency.value = 760;
-    filter.Q.value = 0.65;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
     gain.gain.setValueAtTime(volume, start);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     source.connect(filter);
@@ -98,8 +105,13 @@ class GameSoundEngine {
         this.tone(620, 0, 0.055, 0.09, "sine", 790);
         break;
       case "deploy":
-        this.tone(112, 0, 0.16, 0.28, "triangle", 68);
-        this.tone(420, 0.035, 0.09, 0.08, "sine", 310);
+        this.tone(58, 0, .46, .28, "sawtooth", 36);
+        this.tone(91, .025, .34, .18, "triangle", 48);
+        [0, .085, .17, .255].forEach((delay, index) => {
+          this.noise(delay, .055, .09 - index * .01, 1850, "highpass", .85);
+          this.tone(310 - index * 18, delay, .065, .075, "square", 165);
+        });
+        this.noise(.22, .25, .1, 175, "lowpass", .5);
         break;
       case "dice":
         [0, .07, .14, .21, .29, .38, .48].forEach((delay, index) => {
@@ -108,25 +120,30 @@ class GameSoundEngine {
         });
         break;
       case "battle":
-        this.noise(0, 0.2, 0.22);
-        this.tone(96, 0, 0.28, 0.32, "sawtooth", 45);
-        this.tone(142, 0.18, 0.2, 0.22, "triangle", 72);
+        this.noise(0, .08, .24, 1700, "highpass", .75);
+        this.noise(.025, .52, .26, 145, "lowpass", .45);
+        this.tone(82, 0, .48, .34, "sawtooth", 31);
+        this.noise(.2, .07, .15, 2100, "highpass", .8);
+        this.noise(.225, .38, .17, 125, "lowpass", .45);
+        this.tone(69, .2, .39, .25, "triangle", 29);
         break;
       case "conquest":
-        [392, 494, 587, 784].forEach((frequency, index) => this.tone(frequency, index * .095, .32, .14, "triangle", frequency * 1.04));
-        this.noise(.28, .24, .07);
+        this.noise(0, .34, .13, 135, "lowpass", .5);
+        this.tone(72, 0, .36, .24, "sawtooth", 34);
+        [392, 523, 659, 784].forEach((frequency, index) => this.tone(frequency, .16 + index * .105, .42, .14, "triangle", frequency * 1.03));
         break;
       case "fortify":
-        this.tone(170, 0, .38, .16, "triangle", 460);
-        this.tone(255, .06, .3, .08, "sine", 620);
+        this.tone(64, 0, .4, .2, "sawtooth", 42);
+        [0, .1, .2].forEach((delay) => this.noise(delay, .05, .06, 1500, "highpass", .8));
+        this.tone(170, .08, .3, .12, "triangle", 390);
         break;
       case "cards":
         [523, 659, 784, 1047].forEach((frequency, index) => this.tone(frequency, index * .075, .42, .1, "sine", frequency));
         break;
       case "turn":
-        this.tone(262, 0, .32, .14, "triangle", 262);
-        this.tone(392, .11, .38, .16, "triangle", 392);
-        this.tone(523, .24, .48, .13, "triangle", 523);
+        this.tone(262, 0, .3, .14, "sawtooth", 262);
+        this.tone(392, .11, .36, .15, "sawtooth", 392);
+        this.tone(523, .24, .46, .13, "triangle", 523);
         break;
       case "message":
         this.tone(880, 0, .11, .1, "sine", 1100);

@@ -14,8 +14,9 @@
     "typecheck": "tsc --noEmit",
     "import:board": "node scripts/import-board-svg.mjs",
     "validate:dice": "node --experimental-strip-types scripts/validate-dice-rules.mjs",
+    "validate:flow": "node --no-warnings --experimental-vm-modules scripts/validate-game-flow.mjs",
     "validate:objectives": "node scripts/validate-objectives.mjs",
-    "check": "npm run validate:objectives && npm run validate:dice && npm run lint && npm run typecheck && npm run build"
+    "check": "npm run validate:objectives && npm run validate:dice && npm run validate:flow && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "next": "16.2.6",

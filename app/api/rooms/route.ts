@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       maxPlayers,
       mode: "missioni",
       timeLimitMinutes,
-      defense: "interactive",
+      defense: "automatic",
     };
 
     let code = generateCode();

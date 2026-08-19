@@ -14,11 +14,11 @@ function readError(payload: unknown, fallback: string) {
 
 function RulesModal({ onClose }: { onClose: () => void }) {
   const steps = [
-    ["01", "Schiera", "Ricevi territori casuali e distribuisci le armate iniziali. Nel duello compare anche un impero neutrale."],
-    ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti che controlli interamente."],
-    ["03", "Attacca", "Scegli due territori confinanti. I dadi sono automatici: l'attacco usa 3/2/1 dadi con 4+/3/2 armate, la difesa 3/2/1 con 3+/2/1; i pareggi favoriscono la difesa."],
+    ["01", "Schiera", "Ricevi territori casuali. A turno ogni comandante piazza un blocco di 3 armate; l'ultimo blocco può essere più piccolo. Nel duello compare anche un impero neutrale."],
+    ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti. Appena piazzi l'ultima, il gioco passa automaticamente all'attacco."],
+    ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia attacco e difesa: 3/2/1 dadi con 4+/3/2 armate in attacco e 3+/2/1 in difesa; i pareggi favoriscono la difesa."],
     ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico tra territori collegati del tuo dominio."],
-    ["05", "Completa la carta", "Conquista tutti e soli i territori richiesti dalla tua carta segreta: una delle 16 mappe da 86 punti."],
+    ["05", "Completa la carta", "Conquista tutti e soli i territori richiesti dalla tua carta segreta. Rosso indica ciò che manca, verde ciò che controlli già; le carte territorio pescate restano private."],
   ];
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Regole del gioco">

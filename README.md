@@ -10,11 +10,13 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 
 - stanze private con codice di sei caratteri;
 - sincronizzazione online, riconnessione e salvataggio persistente;
-- tabellone vettoriale realistico con 42 territori cliccabili, valori-confine, rotte marittime e pedine;
+- tabellone vettoriale realistico con 42 territori cliccabili, rotte marittime e pedine a forma di carro armato colorato con conteggio delle armate;
 - esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti, disegnate con le stesse sagome reali del tabellone;
-- territori della missione evidenziati direttamente sulla plancia, distinguendo quelli da conquistare da quelli già controllati;
-- dadi animati e conteggio automatico regolamentare: attacco 3/2/1 con 4+/3/2 armate, difesa 3/2/1 con 3+/2/1 armate;
-- effetti sonori sintetizzati dal browser per schieramenti, dadi, battaglie, conquiste, turni, carte e messaggi;
+- territori della missione evidenziati con tratteggio rosso se mancanti e verde se già controllati, sia sulla plancia sia sulla carta obiettivo in fondo alla schermata;
+- schieramento iniziale alternato a blocchi di 3 armate e passaggio automatico all'attacco dopo l'ultimo rinforzo;
+- dadi animati e conteggio regolamentare: un solo clic dell'attaccante lancia automaticamente attacco 3/2/1 con 4+/3/2 armate e difesa 3/2/1 con 3+/2/1 armate;
+- carta territorio appena pescata mostrata soltanto al proprietario e consultabile anche durante i turni avversari;
+- paesaggio sonoro militare sintetizzato dal browser: cingoli e metallo per gli schieramenti, dadi, artiglieria, conquiste, turni, carte e messaggi;
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
 - modalità classica o a tempo;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
@@ -76,6 +78,8 @@ npm run dev        # sviluppo
 npm run lint       # controllo ESLint
 npm run typecheck  # controllo TypeScript
 npm run import:board # rigenera le 42 sagome interattive dal tabellone SVG
+npm run validate:dice # verifica le regole automatiche 3/2/1 dei dadi
+npm run validate:flow # simula turni iniziali, battaglia automatica e privacy delle carte
 npm run validate:objectives # verifica 16 carte, connessione e 86 punti
 npm run build      # build di produzione
 npm run start      # avvio della build

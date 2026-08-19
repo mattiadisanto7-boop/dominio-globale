@@ -29,8 +29,6 @@ export default function ActionPanel({
   selectedTo,
   setSelectedFrom,
   setSelectedTo,
-  setupAmount,
-  setSetupAmount,
   deployAmount,
   setDeployAmount,
   action,
@@ -41,8 +39,6 @@ export default function ActionPanel({
   selectedTo?: TerritoryId;
   setSelectedFrom: (value?: TerritoryId) => void;
   setSelectedTo: (value?: TerritoryId) => void;
-  setupAmount: number;
-  setSetupAmount: (value: number) => void;
   deployAmount: number;
   setDeployAmount: (value: number) => void;
   action: (action: GameAction) => Promise<void>;
@@ -56,41 +52,37 @@ export default function ActionPanel({
 
   const name = (id?: TerritoryId) => id ? TERRITORY_BY_ID[id].name : "—";
   const maxAttackDice = selectedFrom ? attackDiceForArmies(state.territories[selectedFrom].armies) : 0;
+  const maxDefenseDice = selectedTo ? defenseDiceForArmies(state.territories[selectedTo].armies) : 0;
   const maxFortify = selectedFrom ? Math.max(0, state.territories[selectedFrom].armies - 1) : 0;
 
-  if (state.phase === "setup") return (
-    <section className="action-panel">
-      <div className="action-kicker">FASE 0 · PREPARAZIONE</div><h2>Schiera le tue forze</h2>
-      <p>Hai <b>{me.setupPool} armate</b> ancora da distribuire. Scegli una quantità e tocca un tuo territorio.</p>
-      <div className="amount-picker">
-        {[1, 3, 5].map((value) => <button key={value} className={setupAmount === value ? "active" : ""} disabled={value > me.setupPool} onClick={() => setSetupAmount(value)}>+{value}</button>)}
-        <button className={setupAmount === me.setupPool ? "active" : ""} disabled={!me.setupPool} onClick={() => setSetupAmount(me.setupPool)}>Tutte</button>
-      </div>
-      <p className="selection-note">Quantità selezionata: <b>{Math.min(setupAmount, me.setupPool)}</b></p>
-      <button className="secondary-button full-button" disabled={busy || !me.setupPool} onClick={() => action({ type: "autoSetup" })}>Distribuzione rapida equilibrata</button>
-      {!me.setupPool && <div className="waiting-host"><span className="pulse-dot" /> In attesa degli altri schieramenti…</div>}
-    </section>
-  );
+  if (state.phase === "setup") {
+    const current = state.players.find((player) => player.id === state.currentPlayerId);
+    const batch = Math.min(3, me.setupPool);
+    if (!isTurn) return (
+      <section className="action-panel waiting-panel">
+        <div className="action-kicker">SCHIERAMENTO ALTERNATO</div>
+        <span className="large-pulse" style={{ "--player-color": current?.color ?? "#d5b56e" } as CSSProperties}>{current?.name.slice(0, 1)}</span>
+        <h2>Tocca a {current?.name}</h2>
+        <p>Ogni comandante schiera un blocco di 3 armate, poi il comando passa automaticamente al successivo.</p>
+        <div className="setup-counter"><span>LE TUE ARMATE DA SCHIERARE</span><b>{me.setupPool}</b></div>
+      </section>
+    );
+    return (
+      <section className="action-panel setup-turn-panel">
+        <div className="action-kicker">FASE 0 · TOCCA A TE</div><h2>Schiera {batch} {batch === 1 ? "armata" : "armate"}</h2>
+        <p>Hai <b>{me.setupPool} armate</b> ancora da distribuire. Tocca un tuo territorio: questo intero blocco verrà piazzato lì, poi toccherà al prossimo giocatore.</p>
+        <div className="setup-batch"><span>QUESTO BLOCCO</span><b>+{batch}</b><small>passaggio turno automatico</small></div>
+        <button className="secondary-button full-button" disabled={busy || !me.setupPool} onClick={() => action({ type: "autoSetup" })}>Distribuisci questo blocco sui territori più deboli</button>
+      </section>
+    );
+  }
 
   if (!isTurn && state.phase !== "gameover") {
     const current = state.players.find((player) => player.id === state.currentPlayerId);
-    const battle = state.pendingBattle;
-    if (battle?.defenderId === meId) {
-      const maxDefense = defenseDiceForArmies(state.territories[battle.to].armies);
-      return (
-        <section className="action-panel waiting-panel">
-          <div className="action-kicker">ATTACCO IN ARRIVO</div><h2>Difendi {name(battle.to)}</h2>
-          <p>{current?.name} ha ottenuto:</p><DiceRow values={battle.attackerDice} tone="attack" />
-          <p>La difesa usa automaticamente il massimo consentito. In caso di parità, vinci tu.</p>
-          <div className="automatic-dice defense"><div>{Array.from({ length: maxDefense }, (_, index) => <PipDie key={index} value={index + 1} tone="defense" />)}</div><b>{maxDefense} {maxDefense === 1 ? "DADO" : "DADI"} DI DIFESA</b></div>
-          <button className="danger-button full-button" disabled={busy} onClick={() => action({ type: "defend" })}>Lancia {maxDefense} {maxDefense === 1 ? "dado" : "dadi"} e difendi</button>
-        </section>
-      );
-    }
     return (
       <section className="action-panel waiting-panel">
         <div className="action-kicker">TURNO AVVERSARIO</div><span className="large-pulse" style={{ "--player-color": current?.color ?? "#d5b56e" } as CSSProperties}>{current?.name.slice(0, 1)}</span>
-        <h2>Sta giocando {current?.name}</h2><p>La mappa si aggiorna automaticamente. Studia i confini o usa il canale diplomatico.</p>
+        <h2>Sta giocando {current?.name}</h2><p>La mappa si aggiorna automaticamente. Se vieni attaccato, i tuoi dadi di difesa vengono lanciati dal server senza interrompere il flusso.</p>
       </section>
     );
   }
@@ -98,17 +90,17 @@ export default function ActionPanel({
   if (state.phase === "reinforce") return (
     <section className="action-panel">
       <div className="action-kicker">FASE 1 · RINFORZI</div><h2>{state.reinforcementPool ? `${state.reinforcementPool} armate da schierare` : "Schieramento completato"}</h2>
-      <p>{state.reinforcementPool ? "Scegli una quantità e poi tocca uno dei tuoi territori." : "Puoi cambiare un tris oppure iniziare gli attacchi."}</p>
-      {state.reinforcementPool > 0 && <div className="amount-picker">
+      <p>{me.cards.length >= 5 ? "Hai 5 o più carte: prima di schierare devi giocare un tris." : state.reinforcementPool ? "Scegli una quantità e poi tocca uno dei tuoi territori. Dopo l'ultima armata inizierà subito la fase d'attacco." : "Controllo delle carte in corso prima dell'attacco automatico."}</p>
+      {state.reinforcementPool > 0 && me.cards.length < 5 && <div className="amount-picker">
         {[1, 3, 5].map((value) => <button key={value} className={deployAmount === value ? "active" : ""} disabled={value > state.reinforcementPool} onClick={() => setDeployAmount(value)}>+{value}</button>)}
         <button className={deployAmount === state.reinforcementPool ? "active" : ""} onClick={() => setDeployAmount(state.reinforcementPool)}>Tutte</button>
       </div>}
       <details className="cards-detail" open={me.cards.length >= 5}>
         <summary>Le tue carte <span>{me.cardCount}</span>{me.cards.length >= 5 && <em>CAMBIO OBBLIGATORIO</em>}</summary>
         <CardHand player={me} selected={selectedCards} onToggle={(id) => setSelectedCards((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 3 ? [...current, id] : current)} />
-        <button className="secondary-button full-button" disabled={busy || selectedCards.length !== 3} onClick={() => action({ type: "tradeCards", cardIds: selectedCards })}>Gioca il tris selezionato</button>
+        <button className="secondary-button full-button" disabled={busy || selectedCards.length !== 3} onClick={async () => { await action({ type: "tradeCards", cardIds: selectedCards }); setSelectedCards([]); }}>Gioca il tris selezionato</button>
       </details>
-      <button className="primary-button full-button" disabled={busy || state.reinforcementPool > 0 || me.cards.length >= 5} onClick={() => action({ type: "beginAttack" })}>{state.resumePhase === "attack" ? "Riprendi gli attacchi" : "Passa agli attacchi"}</button>
+      {!state.reinforcementPool && <div className="waiting-host"><span className="pulse-dot" /> {me.cards.length >= 5 ? "Gioca il tris obbligatorio per continuare." : "Passaggio automatico agli attacchi…"}</div>}
     </section>
   );
 
@@ -121,8 +113,9 @@ export default function ActionPanel({
           : state.pendingMove ? <p>Completa lo spostamento dopo la conquista.</p>
           : selectedFrom && selectedTo ? <>
             <h2>Prepara l&apos;attacco</h2><div className="battle-route"><span>{name(selectedFrom)} <small>{state.territories[selectedFrom].armies}</small></span><b>→</b><span>{name(selectedTo)} <small>{state.territories[selectedTo].armies}</small></span></div>
-            <p>Il numero di dadi è automatico in base alle armate sul territorio di partenza.</p><div className="automatic-dice attack"><div>{Array.from({ length: maxAttackDice }, (_, index) => <PipDie key={index} value={index + 1} tone="attack" />)}</div><b>{maxAttackDice} {maxAttackDice === 1 ? "DADO" : "DADI"} D&apos;ATTACCO</b></div>
-            <button className="danger-button full-button" disabled={busy || maxAttackDice < 1} onClick={async () => { await action({ type: "attack", from: selectedFrom, to: selectedTo }); setSelectedTo(undefined); }}>Lancia {maxAttackDice} {maxAttackDice === 1 ? "dado" : "dadi"} d&apos;attacco</button>
+            <p>Premi tu una sola volta: i dadi d&apos;attacco e quelli del difensore verranno calcolati con il massimo regolamentare.</p>
+            <div className="automatic-dice-pair"><div className="automatic-dice attack"><div>{Array.from({ length: maxAttackDice }, (_, index) => <PipDie key={index} value={index + 1} tone="attack" />)}</div><b>{maxAttackDice} {maxAttackDice === 1 ? "DADO" : "DADI"} D&apos;ATTACCO</b></div><div className="automatic-dice defense"><div>{Array.from({ length: maxDefenseDice }, (_, index) => <PipDie key={index} value={index + 1} tone="defense" />)}</div><b>{maxDefenseDice} {maxDefenseDice === 1 ? "DADO" : "DADI"} DI DIFESA · AUTO</b></div></div>
+            <button className="danger-button full-button" disabled={busy || maxAttackDice < 1} onClick={async () => { await action({ type: "attack", from: selectedFrom, to: selectedTo }); setSelectedTo(undefined); }}>Lancia i dadi e risolvi la battaglia</button>
             <button className="text-button" onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); }}>Cambia territori</button>
           </> : <><h2>{selectedFrom ? "Scegli il bersaglio" : "Scegli da dove attaccare"}</h2><p>{selectedFrom ? `Hai selezionato ${name(selectedFrom)}. Ora tocca un territorio nemico confinante.` : "Tocca un tuo territorio con almeno 2 armate, poi un confine avversario."}</p>{selectedFrom && <button className="text-button" onClick={() => setSelectedFrom(undefined)}>Annulla selezione</button>}</>}
         {!battle && !state.pendingMove && <button className="secondary-button full-button end-phase" disabled={busy} onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); action({ type: "endAttack" }); }}>Concludi gli attacchi</button>}
