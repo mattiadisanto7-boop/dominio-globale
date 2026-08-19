@@ -160,8 +160,8 @@ export type GameAction =
   | { type: "deploy"; territoryId: TerritoryId; amount: number }
   | { type: "tradeCards"; cardIds: string[] }
   | { type: "beginAttack" }
-  | { type: "attack"; from: TerritoryId; to: TerritoryId; dice: number }
-  | { type: "defend"; dice: number }
+  | { type: "attack"; from: TerritoryId; to: TerritoryId }
+  | { type: "defend" }
   | { type: "moveAfterConquest"; amount: number }
   | { type: "endAttack" }
   | { type: "fortify"; from: TerritoryId; to: TerritoryId; amount: number }

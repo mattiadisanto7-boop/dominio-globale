@@ -168,3 +168,9 @@ export const SYMBOL_LABELS: Record<CardSymbol, string> = {
   artiglieria: "Artiglieria",
   jolly: "Jolly",
 };
+
+export const attackDiceForArmies = (armies: number) =>
+  Math.min(3, Math.max(0, Math.floor(armies) - 1));
+
+export const defenseDiceForArmies = (armies: number) =>
+  Math.min(3, Math.max(0, Math.floor(armies)));

@@ -10,9 +10,11 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 
 - stanze private con codice di sei caratteri;
 - sincronizzazione online, riconnessione e salvataggio persistente;
-- tabellone illustrato con 42 territori cliccabili, valori-confine, rotte marittime e pedine;
-- esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti;
-- dadi animati, difesa interattiva fino a tre dadi ed effetti sonori sintetizzati dal browser;
+- tabellone vettoriale realistico con 42 territori cliccabili, valori-confine, rotte marittime e pedine;
+- esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti, disegnate con le stesse sagome reali del tabellone;
+- territori della missione evidenziati direttamente sulla plancia, distinguendo quelli da conquistare da quelli già controllati;
+- dadi animati e conteggio automatico regolamentare: attacco 3/2/1 con 4+/3/2 armate, difesa 3/2/1 con 3+/2/1 armate;
+- effetti sonori sintetizzati dal browser per schieramenti, dadi, battaglie, conquiste, turni, carte e messaggi;
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
 - modalità classica o a tempo;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
@@ -73,6 +75,7 @@ Apri `http://localhost:3000`.
 npm run dev        # sviluppo
 npm run lint       # controllo ESLint
 npm run typecheck  # controllo TypeScript
+npm run import:board # rigenera le 42 sagome interattive dal tabellone SVG
 npm run validate:objectives # verifica 16 carte, connessione e 86 punti
 npm run build      # build di produzione
 npm run start      # avvio della build
@@ -84,5 +87,6 @@ npm run start      # avvio della build
 - Sul server vengono salvati solo gli hash SHA-256 dei token di accesso.
 - Gli aggiornamenti usano un numero di versione per evitare sovrascritture concorrenti.
 - Gli effetti audio non richiedono file esterni: sono generati in tempo reale con Web Audio e possono essere disattivati.
+- Il tabellone SVG e la geometria territoriale estratta seguono la licenza CC BY-SA 3.0 indicata in `NOTICE.md`; il resto del codice rimane sotto la licenza del progetto.
 - Il database utilizza query parametrizzate e transazioni PostgreSQL.
 - `/api/health` verifica sia il servizio web sia la connessione al database.

@@ -16,7 +16,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
   const steps = [
     ["01", "Schiera", "Ricevi territori casuali e distribuisci le armate iniziali. Nel duello compare anche un impero neutrale."],
     ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti che controlli interamente."],
-    ["03", "Attacca", "Scegli due territori confinanti. Attacco e difesa possono usare fino a 3 dadi; i pareggi favoriscono la difesa."],
+    ["03", "Attacca", "Scegli due territori confinanti. I dadi sono automatici: l'attacco usa 3/2/1 dadi con 4+/3/2 armate, la difesa 3/2/1 con 3+/2/1; i pareggi favoriscono la difesa."],
     ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico tra territori collegati del tuo dominio."],
     ["05", "Completa la carta", "Conquista tutti e soli i territori richiesti dalla tua carta segreta: una delle 16 mappe da 86 punti."],
   ];
@@ -81,7 +81,7 @@ export default function HomeScreen({ initialCode, onEnter }: { initialCode: stri
         <div className="hero-copy">
           <span className="eyebrow"><i /> Strategia online · 2–6 giocatori</span>
           <h1>Il mondo non si conquista per caso.</h1>
-          <p>Il tabellone completo, le 16 carte Challenge da 86 punti, dadi animati e battaglie fino a tre dadi. Crea una sala privata e gioca online da qualsiasi dispositivo.</p>
+          <p>Il tabellone mondiale completo, le 16 carte Challenge da 86 punti, obiettivi evidenziati e dadi automatici animati. Crea una sala privata e gioca online da qualsiasi dispositivo.</p>
           <div className="feature-row"><span><b>42</b> territori</span><span><b>16</b> obiettivi</span><span><b>86</b> punti</span></div>
         </div>
         <div className="war-room-card">

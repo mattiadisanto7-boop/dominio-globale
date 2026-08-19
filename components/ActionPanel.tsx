@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 import { GraphicDiceRow, PipDie } from "@/components/DiceArena";
-import { SYMBOL_LABELS, TERRITORY_BY_ID, type TerritoryId } from "@/lib/game-data";
+import { SYMBOL_LABELS, TERRITORY_BY_ID, attackDiceForArmies, defenseDiceForArmies, type TerritoryId } from "@/lib/game-data";
 import type { GameAction, PublicPlayer, RoomEnvelope } from "@/lib/game-types";
 
 export function DiceRow({ values, tone }: { values: number[]; tone: "attack" | "defense" }) {
@@ -51,12 +51,11 @@ export default function ActionPanel({
   const { state, meId } = envelope;
   const me = state.players.find((player) => player.id === meId)!;
   const isTurn = state.currentPlayerId === meId;
-  const [dice, setDice] = useState(3);
   const [fortifyAmount, setFortifyAmount] = useState(1);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
 
   const name = (id?: TerritoryId) => id ? TERRITORY_BY_ID[id].name : "—";
-  const maxAttackDice = selectedFrom ? Math.max(0, Math.min(3, state.territories[selectedFrom].armies - 1)) : 0;
+  const maxAttackDice = selectedFrom ? attackDiceForArmies(state.territories[selectedFrom].armies) : 0;
   const maxFortify = selectedFrom ? Math.max(0, state.territories[selectedFrom].armies - 1) : 0;
 
   if (state.phase === "setup") return (
@@ -77,14 +76,14 @@ export default function ActionPanel({
     const current = state.players.find((player) => player.id === state.currentPlayerId);
     const battle = state.pendingBattle;
     if (battle?.defenderId === meId) {
-      const maxDefense = Math.min(3, state.territories[battle.to].armies);
+      const maxDefense = defenseDiceForArmies(state.territories[battle.to].armies);
       return (
         <section className="action-panel waiting-panel">
           <div className="action-kicker">ATTACCO IN ARRIVO</div><h2>Difendi {name(battle.to)}</h2>
           <p>{current?.name} ha ottenuto:</p><DiceRow values={battle.attackerDice} tone="attack" />
-          <p>Scegli i dadi di difesa. In caso di parità, vinci tu.</p>
-          <div className="dice-choice">{Array.from({ length: maxDefense }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxDefense) === value ? "active" : ""} onClick={() => setDice(value)}><PipDie value={value} tone="defense" />{value} {value === 1 ? "dado" : "dadi"}</button>)}</div>
-          <button className="danger-button full-button" disabled={busy} onClick={() => action({ type: "defend", dice: Math.min(dice, maxDefense) })}>Lancia e difendi</button>
+          <p>La difesa usa automaticamente il massimo consentito. In caso di parità, vinci tu.</p>
+          <div className="automatic-dice defense"><div>{Array.from({ length: maxDefense }, (_, index) => <PipDie key={index} value={index + 1} tone="defense" />)}</div><b>{maxDefense} {maxDefense === 1 ? "DADO" : "DADI"} DI DIFESA</b></div>
+          <button className="danger-button full-button" disabled={busy} onClick={() => action({ type: "defend" })}>Lancia {maxDefense} {maxDefense === 1 ? "dado" : "dadi"} e difendi</button>
         </section>
       );
     }
@@ -118,12 +117,12 @@ export default function ActionPanel({
     return (
       <section className="action-panel">
         <div className="action-kicker">FASE 2 · ATTACCO</div>
-        {battle ? <><h2>Battaglia in attesa</h2><div className="battle-route"><span>{name(battle.from)}</span><b>→</b><span>{name(battle.to)}</span></div><p>Hai lanciato:</p><DiceRow values={battle.attackerDice} tone="attack" /><div className="waiting-host"><span className="pulse-dot" /> Il difensore sceglie i suoi dadi…</div></>
+        {battle ? <><h2>Battaglia in attesa</h2><div className="battle-route"><span>{name(battle.from)}</span><b>→</b><span>{name(battle.to)}</span></div><p>Hai lanciato:</p><DiceRow values={battle.attackerDice} tone="attack" /><div className="waiting-host"><span className="pulse-dot" /> Il difensore sta lanciando automaticamente…</div></>
           : state.pendingMove ? <p>Completa lo spostamento dopo la conquista.</p>
           : selectedFrom && selectedTo ? <>
             <h2>Prepara l&apos;attacco</h2><div className="battle-route"><span>{name(selectedFrom)} <small>{state.territories[selectedFrom].armies}</small></span><b>→</b><span>{name(selectedTo)} <small>{state.territories[selectedTo].armies}</small></span></div>
-            <p>Quanti dadi vuoi lanciare?</p><div className="dice-choice">{Array.from({ length: maxAttackDice }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxAttackDice) === value ? "active" : ""} onClick={() => setDice(value)}><PipDie value={value} tone="attack" />{value}</button>)}</div>
-            <button className="danger-button full-button" disabled={busy} onClick={async () => { await action({ type: "attack", from: selectedFrom, to: selectedTo, dice: Math.min(dice, maxAttackDice) }); setSelectedTo(undefined); }}>Lancia i dadi d&apos;attacco</button>
+            <p>Il numero di dadi è automatico in base alle armate sul territorio di partenza.</p><div className="automatic-dice attack"><div>{Array.from({ length: maxAttackDice }, (_, index) => <PipDie key={index} value={index + 1} tone="attack" />)}</div><b>{maxAttackDice} {maxAttackDice === 1 ? "DADO" : "DADI"} D&apos;ATTACCO</b></div>
+            <button className="danger-button full-button" disabled={busy || maxAttackDice < 1} onClick={async () => { await action({ type: "attack", from: selectedFrom, to: selectedTo }); setSelectedTo(undefined); }}>Lancia {maxAttackDice} {maxAttackDice === 1 ? "dado" : "dadi"} d&apos;attacco</button>
             <button className="text-button" onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); }}>Cambia territori</button>
           </> : <><h2>{selectedFrom ? "Scegli il bersaglio" : "Scegli da dove attaccare"}</h2><p>{selectedFrom ? `Hai selezionato ${name(selectedFrom)}. Ora tocca un territorio nemico confinante.` : "Tocca un tuo territorio con almeno 2 armate, poi un confine avversario."}</p>{selectedFrom && <button className="text-button" onClick={() => setSelectedFrom(undefined)}>Annulla selezione</button>}</>}
         {!battle && !state.pendingMove && <button className="secondary-button full-button end-phase" disabled={busy} onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); action({ type: "endAttack" }); }}>Concludi gli attacchi</button>}

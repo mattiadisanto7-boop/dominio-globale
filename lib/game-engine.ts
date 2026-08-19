@@ -3,6 +3,8 @@ import {
   PLAYER_COLORS,
   TERRITORIES,
   TERRITORY_BY_ID,
+  attackDiceForArmies,
+  defenseDiceForArmies,
   type ContinentId,
   type TerritoryId,
 } from "@/lib/game-data";
@@ -626,9 +628,8 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(from?.ownerId === playerId, "Il territorio di partenza non è tuo.");
     assertRule(to && to.ownerId !== playerId, "Scegli un territorio avversario.");
     assertRule(TERRITORY_BY_ID[action.from].adjacent.includes(action.to), "I territori non confinano.");
-    const maxDice = Math.min(3, from.armies - 1);
-    const dice = Math.floor(action.dice);
-    assertRule(dice >= 1 && dice <= maxDice, "Numero di dadi d'attacco non valido.");
+    const dice = attackDiceForArmies(from.armies);
+    assertRule(dice >= 1, "Servono almeno 2 armate per attaccare.");
     const battle = {
       attackerId: playerId,
       defenderId: to.ownerId,
@@ -639,7 +640,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
       createdAt: Date.now(),
     };
     state.pendingBattle = battle;
-    if (to.ownerId === NEUTRAL_ID) resolveBattle(state, roll(Math.min(3, to.armies)));
+    if (to.ownerId === NEUTRAL_ID) resolveBattle(state, roll(defenseDiceForArmies(to.armies)));
     return state;
   }
 
@@ -648,8 +649,8 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(battle, "Non c'è un attacco da difendere.");
     assertRule(battle.defenderId === playerId, "Questo attacco non è diretto contro di te.");
     const territory = state.territories[battle.to];
-    const dice = Math.floor(action.dice);
-    assertRule(dice >= 1 && dice <= Math.min(3, territory.armies), "Numero di dadi di difesa non valido.");
+    const dice = defenseDiceForArmies(territory.armies);
+    assertRule(dice >= 1, "Il territorio non ha armate con cui difendersi.");
     resolveBattle(state, roll(dice));
     return state;
   }

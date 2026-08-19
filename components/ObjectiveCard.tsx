@@ -1,7 +1,12 @@
 "use client";
 
 import { TERRITORIES } from "@/lib/game-data";
-import { TERRITORY_SHAPES } from "@/lib/territory-shapes";
+import {
+  BOARD_TERRITORY_TRANSFORM,
+  BOARD_VIEW_BOX,
+  SEA_ROUTE_PATHS,
+  TERRITORY_SHAPES,
+} from "@/lib/territory-shapes";
 import type { PublicGameState, PublicPlayer } from "@/lib/game-types";
 
 export default function ObjectiveCard({ state, player }: { state: PublicGameState; player: PublicPlayer }) {
@@ -18,13 +23,18 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
         <small>{objective ? `N° ${objective.number} / 16` : "IN PREPARAZIONE"}</small>
       </div>
       <div className="objective-map-wrap">
-        <svg className="objective-map" viewBox="0 0 1100 620" aria-label={objective ? `Mappa dell'obiettivo ${objective.number}` : "Obiettivo non ancora assegnato"}>
-          <rect width="1100" height="620" rx="26" />
-          {TERRITORIES.map((territory) => {
-            const needed = required.has(territory.id);
-            const owned = needed && state.territories[territory.id].ownerId === player.id;
-            return <path key={territory.id} d={TERRITORY_SHAPES[territory.id]} className={needed ? owned ? "secured" : "required" : "outside"} />;
-          })}
+        <svg className="objective-map" viewBox={BOARD_VIEW_BOX} aria-label={objective ? `Mappa dell'obiettivo ${objective.number}` : "Obiettivo non ancora assegnato"}>
+          <rect width="750" height="519" rx="18" />
+          <g className="objective-routes" aria-hidden="true">
+            {SEA_ROUTE_PATHS.map((path) => <path key={path} d={path} />)}
+          </g>
+          <g transform={BOARD_TERRITORY_TRANSFORM}>
+            {TERRITORIES.map((territory) => {
+              const needed = required.has(territory.id);
+              const owned = needed && state.territories[territory.id].ownerId === player.id;
+              return <path key={territory.id} d={TERRITORY_SHAPES[territory.id]} className={needed ? owned ? "secured" : "required" : "outside"} />;
+            })}
+          </g>
         </svg>
         {objective && <span className="objective-number">{objective.number}</span>}
       </div>

@@ -1,26 +1,16 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
+import { TERRITORIES, TERRITORY_BY_ID, type TerritoryId } from "@/lib/game-data";
 import {
-  CONTINENTS,
-  TERRITORIES,
-  TERRITORY_BY_ID,
-  type ContinentId,
-  type TerritoryId,
-} from "@/lib/game-data";
-import { SEA_ROUTE_PATHS, TERRITORY_SHAPES } from "@/lib/territory-shapes";
+  BOARD_TERRITORY_TRANSFORM,
+  BOARD_VIEW_BOX,
+  TERRITORY_CENTERS,
+  TERRITORY_SHAPES,
+} from "@/lib/territory-shapes";
 import type { PublicGameState } from "@/lib/game-types";
 
-type MapStyle = CSSProperties & {
-  "--land-color": string;
-  "--owner-color": string;
-};
-
-const OCEAN_LABELS = [
-  { x: 385, y: 350, lines: ["OCEANO", "ATLANTICO"] },
-  { x: 1061, y: 310, lines: ["OCEANO", "PACIFICO"] },
-  { x: 775, y: 525, lines: ["OCEANO", "INDIANO"] },
-];
+type MapStyle = CSSProperties & { "--owner-color": string };
 
 export default function WorldMap({
   state,
@@ -43,6 +33,12 @@ export default function WorldMap({
     () => Object.fromEntries(state.players.map((player) => [player.id, player.name])),
     [state.players],
   );
+  const me = state.players.find((player) => player.id === meId);
+  const objectiveIds = me?.objective?.territoryIds ?? [];
+  const objectiveTargets = new Set<TerritoryId>(objectiveIds);
+  const objectiveSecured = new Set<TerritoryId>(
+    objectiveIds.filter((id) => state.territories[id].ownerId === meId),
+  );
   const validTargets = selectedFrom
     ? new Set<TerritoryId>(TERRITORY_BY_ID[selectedFrom].adjacent)
     : new Set<TerritoryId>();
@@ -51,80 +47,66 @@ export default function WorldMap({
     <div className="map-scroll board-frame">
       <div className="board-corner corner-one" /><div className="board-corner corner-two" />
       <div className="board-corner corner-three" /><div className="board-corner corner-four" />
-      <svg className="world-map" viewBox="0 0 1100 620" role="group" aria-label="Tabellone mondiale con 42 territori">
+      {me?.objective && (
+        <div className="map-objective-key" aria-label={`Obiettivo ${me.objective.number}: ${objectiveSecured.size} territori conquistati su ${objectiveIds.length}`}>
+          <b>OBIETTIVO {me.objective.number}</b>
+          <span><i className="mission-missing" /> da conquistare</span>
+          <span><i className="mission-secured" /> conquistato</span>
+          <strong>{objectiveSecured.size}/{objectiveIds.length}</strong>
+        </div>
+      )}
+      <svg className="world-map" viewBox={BOARD_VIEW_BOX} role="group" aria-label="Tabellone mondiale realistico con 42 territori">
         <defs>
-          <filter id="territoryGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
+          <filter id="tokenShadow" x="-100%" y="-100%" width="300%" height="300%">
+            <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" floodColor="#000" floodOpacity=".82" />
+          </filter>
+          <filter id="missionGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="1.6" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <filter id="tokenShadow" x="-100%" y="-100%" width="300%" height="300%">
-            <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000" floodOpacity=".72" />
-          </filter>
-          <pattern id="boardGrain" width="80" height="80" patternUnits="userSpaceOnUse">
-            <path d="M0 15 C18 8 30 20 48 13 S71 7 80 15 M0 58 C19 50 37 63 55 55 S72 49 80 58" fill="none" stroke="rgba(255,255,255,.025)" strokeWidth="1" />
-            <circle cx="11" cy="35" r=".8" fill="rgba(255,255,255,.06)" /><circle cx="63" cy="33" r=".6" fill="rgba(255,255,255,.045)" />
-          </pattern>
-          <marker id="attackArrow" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0 0 L0 6 L7 3 Z" fill="#ffe5a5" />
+          <marker id="attackArrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0 0 L0 6 L6 3 Z" fill="#ffe5a5" />
           </marker>
-          <radialGradient id="oceanLight" cx="50%" cy="35%" r="80%">
-            <stop offset="0" stopColor="#294b4b" /><stop offset=".62" stopColor="#132f31" /><stop offset="1" stopColor="#07191b" />
-          </radialGradient>
         </defs>
 
-        <rect x="5" y="5" width="1090" height="610" rx="18" fill="url(#oceanLight)" stroke="rgba(225,203,145,.3)" strokeWidth="2" />
-        <rect x="11" y="11" width="1078" height="598" rx="14" fill="url(#boardGrain)" stroke="rgba(255,255,255,.06)" />
+        <image href="/dominio-globale-board.svg" x="0" y="0" width="750" height="519" preserveAspectRatio="xMidYMid meet" />
 
-        <g className="ocean-labels" aria-hidden="true">
-          {OCEAN_LABELS.map((label) => (
-            <text key={label.x} x={label.x} y={label.y} textAnchor="middle">
-              {label.lines.map((line, index) => <tspan key={line} x={label.x} dy={index ? 17 : 0}>{line}</tspan>)}
-            </text>
-          ))}
-        </g>
-
-        <g className="sea-routes" aria-hidden="true">
-          {SEA_ROUTE_PATHS.map((path) => <path key={path} d={path} />)}
-        </g>
-
-        <g className="territory-layer">
-          {TERRITORIES.map((territory, index) => {
+        <g className="territory-interaction-layer">
+          {TERRITORIES.map((territory) => {
             const current = state.territories[territory.id];
+            const center = TERRITORY_CENTERS[territory.id];
             const ownerColor = current.ownerId === "neutral"
-              ? "#c8c2ad"
-              : playerColor[current.ownerId] ?? "#c8c2ad";
+              ? "#d5cfbd"
+              : playerColor[current.ownerId] ?? "#d5cfbd";
             const selected = selectedFrom === territory.id || selectedTo === territory.id;
             const valid = validTargets.has(territory.id);
+            const mission = objectiveTargets.has(territory.id);
+            const secured = objectiveSecured.has(territory.id);
             const owner = current.ownerId === "neutral" ? "Impero neutrale" : playerName[current.ownerId];
-            const style = {
-              "--land-color": CONTINENTS[territory.continent].color,
-              "--owner-color": ownerColor,
-            } as MapStyle;
+            const className = [
+              "territory-shape",
+              selected ? "selected" : "",
+              valid ? "valid-target" : "",
+              current.ownerId === meId ? "mine" : "",
+              mission ? (secured ? "mission-secured" : "mission-missing") : "",
+            ].filter(Boolean).join(" ");
+
             return (
               <g
                 key={territory.id}
-                className={`territory-shape territory-tone-${index % 4} ${selected ? "selected" : ""} ${valid ? "valid-target" : ""} ${current.ownerId === meId ? "mine" : ""}`}
-                style={style}
+                className={className}
+                style={{ "--owner-color": ownerColor } as MapStyle}
                 onClick={() => onTerritory(territory.id)}
                 role="button"
                 tabIndex={0}
-                aria-label={`${territory.name}, valore ${territory.value}, ${current.armies} armate, ${owner}`}
+                aria-label={`${territory.name}, valore ${territory.value}, ${current.armies} armate, ${owner}${mission ? secured ? ", territorio obiettivo conquistato" : ", territorio obiettivo da conquistare" : ""}`}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") onTerritory(territory.id);
                 }}
               >
                 <title>{territory.name} · valore {territory.value} · {current.armies} armate · {owner}</title>
-                <path className="land-shape" d={TERRITORY_SHAPES[territory.id]} />
-                <circle className="territory-hit" cx={territory.x} cy={territory.y} r="29" />
-                <g className="army-token" transform={`translate(${territory.x} ${territory.y})`} filter="url(#tokenShadow)">
-                  <circle className="token-ring" r="16" />
-                  <circle className="token-core" r="12.5" />
-                  <text className="army-count" textAnchor="middle" y="4.5">{current.armies}</text>
-                </g>
-                <g className="territory-caption" transform={`translate(${territory.x} ${territory.y + 27})`}>
-                  <rect x="-24" y="-9" width="48" height="17" rx="5" />
-                  <text textAnchor="middle" y="3">{territory.short} <tspan>· {territory.value}</tspan></text>
-                </g>
+                <path className="land-shape" transform={BOARD_TERRITORY_TRANSFORM} d={TERRITORY_SHAPES[territory.id]} />
+                <circle className="territory-hit" cx={center.x} cy={center.y} r="13" />
               </g>
             );
           })}
@@ -133,30 +115,45 @@ export default function WorldMap({
         {selectedFrom && selectedTo && (
           <line
             className="selected-route"
-            x1={TERRITORY_BY_ID[selectedFrom].x}
-            y1={TERRITORY_BY_ID[selectedFrom].y}
-            x2={TERRITORY_BY_ID[selectedTo].x}
-            y2={TERRITORY_BY_ID[selectedTo].y}
+            x1={TERRITORY_CENTERS[selectedFrom].x}
+            y1={TERRITORY_CENTERS[selectedFrom].y}
+            x2={TERRITORY_CENTERS[selectedTo].x}
+            y2={TERRITORY_CENTERS[selectedTo].y}
             markerEnd="url(#attackArrow)"
           />
         )}
 
-        <g className="compass" transform="translate(1030 520)" aria-hidden="true">
-          <circle r="31" /><circle r="22" /><path d="M0-26 L7-6 L0 0 L-7-6 Z M0 26 L7 6 L0 0 L-7 6 Z M-26 0 L-6-7 L0 0 L-6 7 Z M26 0 L6-7 L0 0 L6 7 Z" />
-          <text y="-36" textAnchor="middle">N</text>
-        </g>
-
-        <g className="board-title" transform="translate(355 562)" aria-hidden="true">
-          <text className="board-title-main">DOMINIO GLOBALE</text>
-          <text className="board-title-sub" y="22">CHALLENGE · 16 OBIETTIVI · 86 PUNTI</text>
-        </g>
-        <g className="board-score-key" transform="translate(42 585)" aria-hidden="true">
-          {(Object.keys(CONTINENTS) as ContinentId[]).map((continent, index) => (
-            <g key={continent} transform={`translate(${index * 126} 0)`}>
-              <circle r="4" fill={CONTINENTS[continent].color} />
-              <text x="9" y="3">{CONTINENTS[continent].name.toUpperCase()} +{CONTINENTS[continent].bonus}</text>
-            </g>
-          ))}
+        <g className="army-token-layer" pointerEvents="none">
+          {TERRITORIES.map((territory) => {
+            const current = state.territories[territory.id];
+            const center = TERRITORY_CENTERS[territory.id];
+            const ownerColor = current.ownerId === "neutral"
+              ? "#d5cfbd"
+              : playerColor[current.ownerId] ?? "#d5cfbd";
+            const mission = objectiveTargets.has(territory.id);
+            const secured = objectiveSecured.has(territory.id);
+            return (
+              <g key={territory.id} style={{ "--owner-color": ownerColor } as MapStyle}>
+                <g className="army-token" transform={`translate(${center.x} ${center.y - 5.5})`} filter="url(#tokenShadow)">
+                  <circle className="token-ring" r="8.6" />
+                  <circle className="token-core" r="6.5" />
+                  <text className="army-count" textAnchor="middle" y="2.5">{current.armies}</text>
+                </g>
+                <g className="territory-caption" transform={`translate(${center.x} ${center.y + 9})`}>
+                  <rect x="-15" y="-4.5" width="30" height="9" rx="3" />
+                  <text textAnchor="middle" y="2">{territory.short} <tspan>· {territory.value}</tspan></text>
+                </g>
+                {mission && (
+                  <path
+                    className={`objective-pin ${secured ? "secured" : "missing"}`}
+                    transform={`translate(${center.x + 8.5} ${center.y - 13})`}
+                    d="M0-4 L4 0 L0 4 L-4 0 Z"
+                    filter="url(#missionGlow)"
+                  />
+                )}
+              </g>
+            );
+          })}
         </g>
       </svg>
     </div>
