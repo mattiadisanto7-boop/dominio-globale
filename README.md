@@ -2,6 +2,10 @@
 
 Gioco online di conquista strategica per **2–6 giocatori**, pronto per GitHub e Render.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/mattiadisanto7-boop/dominio-globale)
+
+Premi il pulsante qui sopra per creare automaticamente su Render il servizio web e il database PostgreSQL descritti in `render.yaml`.
+
 ## Funzioni principali
 
 - stanze private con codice di sei caratteri;
