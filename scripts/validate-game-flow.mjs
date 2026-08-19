@@ -55,13 +55,14 @@ const gameData = (await loadModule(path.join(root, "lib/game-data.ts"))).namespa
 const { createLobby, addLobbyPlayer, applyGameAction, sanitizeState } = engine;
 const { TERRITORIES, attackDiceForArmies, defenseDiceForArmies } = gameData;
 
-const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 0, defense: "automatic" };
+const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 90, defense: "automatic" };
 let state = createLobby("TEST42", { id: "alpha", name: "Alpha" }, settings);
 addLobbyPlayer(state, { id: "bravo", name: "Bravo" });
 state = applyGameAction(state, "alpha", { type: "startGame" });
 
 assert(state.phase === "setup", "La partita deve iniziare dallo schieramento.");
 assert(Boolean(state.currentPlayerId), "Lo schieramento deve avere un giocatore corrente.");
+assert(!state.startedAt && !state.deadlineAt, "Il timer non deve partire prima dello schieramento iniziale completo.");
 const legacySetup = structuredClone(state);
 legacySetup.currentPlayerId = undefined;
 assert(Boolean(sanitizeState(legacySetup, "alpha").currentPlayerId), "Le partite create prima dello schieramento alternato devono essere recuperate automaticamente.");
@@ -69,27 +70,42 @@ assert(Boolean(sanitizeState(legacySetup, "alpha").currentPlayerId), "Le partite
 const firstSetupId = state.currentPlayerId;
 const firstSetupPlayer = state.players.find((player) => player.id === firstSetupId);
 const firstSetupPool = firstSetupPlayer.setupPool;
-state = applyGameAction(state, firstSetupId, { type: "autoSetup" });
+const splitTargets = TERRITORIES.filter((territory) => state.territories[territory.id].ownerId === firstSetupId).slice(0, 3);
+for (let index = 0; index < 3; index += 1) {
+  const target = splitTargets[index];
+  const before = state.territories[target.id].armies;
+  state = applyGameAction(state, firstSetupId, { type: "placeSetup", territoryId: target.id });
+  assert(state.territories[target.id].armies === before + 1, "Ogni clic iniziale deve piazzare esattamente 1 armata.");
+  if (index < 2) {
+    assert(state.currentPlayerId === firstSetupId, "Il comando deve restare allo stesso giocatore fino al terzo piazzamento.");
+    assert(state.setupBatchRemaining === 2 - index, "Il contatore del blocco iniziale non è corretto.");
+  }
+}
 assert(firstSetupPlayer.setupPool === firstSetupPool, "Le azioni devono preservare lo stato originale.");
-assert(state.players.find((player) => player.id === firstSetupId).setupPool === firstSetupPool - 3, "Anche la distribuzione rapida deve piazzare un solo blocco di 3.");
-assert(state.currentPlayerId !== firstSetupId, "La distribuzione rapida deve passare il comando al giocatore successivo.");
+assert(state.players.find((player) => player.id === firstSetupId).setupPool === firstSetupPool - 3, "Tre territori differenti devono ricevere una delle tre armate iniziali.");
+assert(state.currentPlayerId !== firstSetupId, "Dopo il terzo piazzamento deve cambiare giocatore.");
 
-let setupActions = 1;
+const autoSetupId = state.currentPlayerId;
+const autoSetupPool = state.players.find((player) => player.id === autoSetupId).setupPool;
+state = applyGameAction(state, autoSetupId, { type: "autoSetup" });
+assert(state.players.find((player) => player.id === autoSetupId).setupPool === autoSetupPool - 3, "La distribuzione rapida deve completare i piazzamenti rimasti nel blocco.");
+
+let setupActions = 4;
 while (state.phase === "setup") {
   const actorId = state.currentPlayerId;
   const actor = state.players.find((player) => player.id === actorId);
-  const territory = TERRITORIES.find((item) => state.territories[item.id].ownerId === actorId);
   const beforePool = actor.setupPool;
-  const beforeArmies = state.territories[territory.id].armies;
-  const expected = Math.min(3, beforePool);
-  state = applyGameAction(state, actorId, { type: "placeSetup", territoryId: territory.id });
-  assert(state.territories[territory.id].armies === beforeArmies + expected, "Ogni blocco iniziale deve contenere 3 armate, salvo il resto finale.");
+  const expected = Math.min(state.setupBatchRemaining, beforePool);
+  state = applyGameAction(state, actorId, { type: "autoSetup" });
+  assert(state.players.find((player) => player.id === actorId).setupPool === beforePool - expected, "La distribuzione automatica deve completare solo il blocco corrente.");
   if (state.phase === "setup") assert(state.currentPlayerId !== actorId, "Dopo ogni blocco iniziale deve cambiare giocatore.");
   setupActions += 1;
   assert(setupActions < 100, "Lo schieramento alternato non termina.");
 }
 
 assert(state.phase === "reinforce", "Dopo lo schieramento deve iniziare la fase rinforzi.");
+assert(Boolean(state.startedAt && state.deadlineAt), "Il timer deve partire quando tutte le armate iniziali sono state piazzate.");
+assert(Math.abs(state.deadlineAt - state.startedAt - 90 * 60_000) < 10, "Il timer principale deve durare 90 minuti dal termine dello schieramento.");
 const attackerId = state.currentPlayerId;
 const attacker = state.players.find((player) => player.id === attackerId);
 const attackFrom = TERRITORIES.find((territory) =>
@@ -101,6 +117,18 @@ const reinforcementPool = state.reinforcementPool;
 state = applyGameAction(state, attackerId, { type: "deploy", territoryId: attackFrom.id, amount: reinforcementPool });
 assert(state.phase === "attack", "L'ultima armata di rinforzo deve aprire automaticamente gli attacchi.");
 
+state.territories[attackFrom.id].armies = 2;
+state.territories[attackToId].armies = 2;
+assertRuleError(
+  () => applyGameAction(state, attackerId, { type: "attack", from: attackFrom.id, to: attackToId }),
+  "Un territorio con 2 armate non deve poter attaccarne uno con 2 o più.",
+);
+state.territories[attackFrom.id].armies = 3;
+state.territories[attackToId].armies = 3;
+assertRuleError(
+  () => applyGameAction(state, attackerId, { type: "attack", from: attackFrom.id, to: attackToId }),
+  "Un territorio con 3 armate non deve poter attaccarne uno con 3 o più.",
+);
 state.territories[attackFrom.id].armies = 4;
 state.territories[attackToId].armies = 3;
 state = applyGameAction(state, attackerId, { type: "attack", from: attackFrom.id, to: attackToId });
@@ -121,7 +149,9 @@ assert(Boolean(drawer.lastDrawnCard), "La carta appena pescata deve essere ricor
 const privateView = sanitizeState(state, attackerId).players.find((player) => player.id === attackerId);
 const opponentView = sanitizeState(state, state.currentPlayerId).players.find((player) => player.id === attackerId);
 assert(privateView.lastDrawnCard?.id === drawer.lastDrawnCard.id, "Chi pesca deve vedere la propria ultima carta anche nel turno seguente.");
+assert(privateView.cards.length === drawer.cards.length, "Il proprietario deve poter consultare tutte le proprie carte in ogni turno.");
 assert(!opponentView.lastDrawnCard, "L'ultima carta pescata non deve essere rivelata agli avversari.");
+assert(opponentView.cards.length === 0, "Il contenuto del mazzo deve restare segreto agli avversari.");
 
 const garrison = structuredClone(state);
 const garrisonPlayerId = garrison.currentPlayerId;
@@ -196,4 +226,53 @@ finished.players.find((player) => player.id === "bravo").status = "eliminated";
 const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
 assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
 
-console.log(`OK · ${setupActions} blocchi alternati · presidio 2 · continente · sdadata · carta privata · rivincita`);
+let botGame = createLobby("BOT004", { id: "human_a", name: "Human A" }, {
+  maxPlayers: 4,
+  mode: "missioni",
+  timeLimitMinutes: 0,
+  defense: "automatic",
+});
+addLobbyPlayer(botGame, { id: "human_b", name: "Human B" });
+botGame = applyGameAction(botGame, "human_a", { type: "fillWithBots" });
+assert(botGame.players.length === 4, "Il riempimento deve occupare tutti i posti scelti nella modalità.");
+assert(botGame.players.filter((player) => player.isBot).length === 2, "Una sala da 4 con 2 persone deve ricevere 2 bot.");
+botGame = applyGameAction(botGame, "human_a", { type: "startGame" });
+let botSetupSteps = 0;
+let verifiedSingleBotPlacement = false;
+while (botGame.phase === "setup") {
+  const current = botGame.players.find((player) => player.id === botGame.currentPlayerId);
+  if (current.isBot) {
+    const beforePool = current.setupPool;
+    botGame = applyGameAction(botGame, "human_a", { type: "advanceBot" });
+    if (!verifiedSingleBotPlacement) {
+      assert(botGame.players.find((player) => player.id === current.id).setupPool === beforePool - 1, "Anche i bot devono piazzare una sola armata per azione iniziale.");
+      verifiedSingleBotPlacement = true;
+    }
+  } else {
+    botGame = applyGameAction(botGame, current.id, { type: "autoSetup" });
+  }
+  botSetupSteps += 1;
+  assert(botSetupSteps < 240, "Lo schieramento con i bot non termina.");
+}
+
+let sawBotTurn = false;
+let botCompletedTurn = false;
+for (let step = 0; step < 80 && botGame.phase !== "gameover" && !botCompletedTurn; step += 1) {
+  const current = botGame.players.find((player) => player.id === botGame.currentPlayerId);
+  if (current.isBot) {
+    sawBotTurn = true;
+    botGame = applyGameAction(botGame, "human_a", { type: "advanceBot" });
+  } else if (sawBotTurn) {
+    botCompletedTurn = true;
+  } else if (botGame.phase === "reinforce") {
+    const territory = TERRITORIES.find((item) => botGame.territories[item.id].ownerId === current.id);
+    botGame = applyGameAction(botGame, current.id, { type: "deploy", territoryId: territory.id, amount: botGame.reinforcementPool });
+  } else if (botGame.phase === "attack") {
+    botGame = applyGameAction(botGame, current.id, { type: "endAttack" });
+  } else if (botGame.phase === "fortify") {
+    botGame = applyGameAction(botGame, current.id, { type: "endTurn" });
+  }
+}
+assert(sawBotTurn && botCompletedTurn, "Il bot deve completare rinforzi, attacchi e fine turno come un giocatore.");
+
+console.log(`OK · ${setupActions} blocchi alternati e divisibili · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · tutte le carte private · 2 bot completi · rivincita`);

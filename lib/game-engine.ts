@@ -4,6 +4,7 @@ import {
   TERRITORIES,
   TERRITORY_BY_ID,
   attackDiceForArmies,
+  canAttackMatchup,
   defenseDiceForArmies,
   type ContinentId,
   type TerritoryId,
@@ -29,6 +30,13 @@ export class GameRuleError extends Error {
 }
 
 const NEUTRAL_ID = "neutral";
+const BOT_NAMES = [
+  "Generale Atlas",
+  "Comandante Nova",
+  "Stratega Orion",
+  "Maresciallo Vega",
+  "Capitano Echo",
+] as const;
 
 const assertRule: (condition: unknown, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new GameRuleError(message);
@@ -141,10 +149,12 @@ export const createLobby = (
     },
   ],
   territories: emptyTerritories(),
+  setupBatchRemaining: 0,
   reinforcementPool: 0,
   conqueredThisTurn: false,
   territoriesConqueredThisTurn: 0,
   fortifyUsed: false,
+  botAttacksThisTurn: 0,
   deck: [],
   discard: [],
   log: [
@@ -165,7 +175,9 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
     !state.players.some((item) => item.name.toLocaleLowerCase("it") === player.name.toLocaleLowerCase("it")),
     "Questo nome è già usato nella sala.",
   );
-  const color = PLAYER_COLORS[state.players.length];
+  const color = PLAYER_COLORS.find(
+    (candidate) => !state.players.some((current) => current.colorId === candidate.id),
+  ) ?? PLAYER_COLORS[state.players.length];
   state.players.push({
     id: player.id,
     name: player.name,
@@ -177,6 +189,36 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
     stats: stats(),
   });
   logItem(state, `${player.name} è entrato nella sala.`);
+};
+
+const fillLobbyWithBots = (state: GameState) => {
+  const added: string[] = [];
+  while (state.players.length < state.settings.maxPlayers) {
+    const color = PLAYER_COLORS.find(
+      (candidate) => !state.players.some((player) => player.colorId === candidate.id),
+    );
+    assertRule(color, "Non ci sono più colori disponibili per i bot.");
+    const baseName = BOT_NAMES.find(
+      (candidate) => !state.players.some((player) => player.name === candidate),
+    ) ?? `Bot ${state.players.filter((player) => player.isBot).length + 1}`;
+    state.players.push({
+      id: makeId("bot"),
+      name: baseName,
+      isBot: true,
+      colorId: color.id,
+      color: color.hex,
+      status: "active",
+      setupPool: 0,
+      cards: [],
+      stats: stats(),
+    });
+    added.push(baseName);
+  }
+  assertRule(added.length > 0, "Tutti i posti della sala sono già occupati.");
+  logItem(
+    state,
+    `${added.length} ${added.length === 1 ? "bot strategico aggiunto" : "bot strategici aggiunti"}: ${added.join(", ")}.`,
+  );
 };
 
 const objectiveDefinitions = () => shuffle(TOURNAMENT_OBJECTIVES.map((objective) => structuredClone(objective)));
@@ -193,20 +235,18 @@ const initializeGame = (state: GameState) => {
   state.round = 1;
   state.currentPlayerId = state.turnOrder[0];
   state.phase = "setup";
-  state.startedAt = Date.now();
-  state.deadlineAt = state.settings.timeLimitMinutes
-    ? state.startedAt + state.settings.timeLimitMinutes * 60_000
-    : undefined;
-  state.timedEndgame = state.deadlineAt
-    ? { stage: "running", threshold: 4, turnsAtThreshold: 0 }
-    : undefined;
+  state.startedAt = undefined;
+  state.deadlineAt = undefined;
+  state.timedEndgame = undefined;
   state.deck = createDeck();
   state.discard = [];
   state.reinforcementPool = 0;
+  state.setupBatchRemaining = 0;
   state.resumePhase = undefined;
   state.conqueredThisTurn = false;
   state.territoriesConqueredThisTurn = 0;
   state.fortifyUsed = false;
+  state.botAttacksThisTurn = 0;
   state.pendingBattle = undefined;
   state.pendingMove = undefined;
   state.lastBattle = undefined;
@@ -249,6 +289,7 @@ const initializeGame = (state: GameState) => {
   players.forEach((player) => {
     player.setupPool = initialArmies - ownedTerritories(state, player.id).length;
   });
+  state.setupBatchRemaining = Math.min(3, playerById(state, state.currentPlayerId).setupPool);
 
   const objectives = objectiveDefinitions();
   players.forEach((player, index) => {
@@ -256,7 +297,7 @@ const initializeGame = (state: GameState) => {
   });
   logItem(
     state,
-    `Territori e obiettivi assegnati. ${playerName(state, state.currentPlayerId)} apre lo schieramento a blocchi di 3.`,
+    `Territori e obiettivi assegnati. ${playerName(state, state.currentPlayerId)} apre lo schieramento: 3 armate, anche su territori differenti.`,
     "turn",
   );
 };
@@ -271,6 +312,7 @@ const advanceSetupTurn = (state: GameState) => {
     if (next.status === "active" && next.setupPool > 0) {
       state.turnIndex = nextIndex;
       state.currentPlayerId = next.id;
+      state.setupBatchRemaining = Math.min(3, next.setupPool);
       return;
     }
   }
@@ -284,10 +326,18 @@ const beginFirstTurn = (state: GameState) => {
   state.currentPlayerId = firstId;
   state.turnIndex = firstIndex;
   state.phase = "reinforce";
+  state.setupBatchRemaining = 0;
+  state.startedAt = Date.now();
+  state.deadlineAt = state.settings.timeLimitMinutes
+    ? state.startedAt + state.settings.timeLimitMinutes * 60_000
+    : undefined;
+  state.timedEndgame = state.deadlineAt
+    ? { stage: "running", threshold: 4, turnsAtThreshold: 0 }
+    : undefined;
   state.reinforcementPool = reinforcementCount(state, firstId);
   logItem(
     state,
-    `Inizia ${playerName(state, firstId)}: ${state.reinforcementPool} rinforzi disponibili.`,
+    `Schieramento completato. ${state.settings.timeLimitMinutes ? `Parte ora il timer da ${state.settings.timeLimitMinutes} minuti.` : "Il timer è disattivato."} Inizia ${playerName(state, firstId)} con ${state.reinforcementPool} rinforzi.`,
     "turn",
   );
 };
@@ -299,7 +349,14 @@ const normalizeSetupTurn = (state: GameState) => {
     return;
   }
   const current = state.players.find((player) => player.id === state.currentPlayerId);
-  if (current?.status === "active" && current.setupPool > 0) return;
+  if (current?.status === "active" && current.setupPool > 0) {
+    if (!Number.isFinite(state.setupBatchRemaining) || state.setupBatchRemaining <= 0) {
+      state.setupBatchRemaining = Math.min(3, current.setupPool);
+    } else {
+      state.setupBatchRemaining = Math.min(state.setupBatchRemaining, current.setupPool);
+    }
+    return;
+  }
   const nextIndex = state.turnOrder.findIndex((playerId) => {
     const player = playerById(state, playerId);
     return player.status === "active" && player.setupPool > 0;
@@ -307,6 +364,7 @@ const normalizeSetupTurn = (state: GameState) => {
   assertRule(nextIndex >= 0, "Non ci sono schieramenti disponibili.");
   state.turnIndex = nextIndex;
   state.currentPlayerId = state.turnOrder[nextIndex];
+  state.setupBatchRemaining = Math.min(3, playerById(state, state.currentPlayerId).setupPool);
 };
 
 const drawCard = (state: GameState, player: GamePlayer) => {
@@ -385,6 +443,8 @@ const bordersEnemy = (state: GameState, territoryId: TerritoryId, playerId: stri
   );
 
 const normalizeRuntimeState = (state: GameState) => {
+  if (!Number.isFinite(state.setupBatchRemaining)) state.setupBatchRemaining = 0;
+  if (!Number.isFinite(state.botAttacksThisTurn)) state.botAttacksThisTurn = 0;
   if (!Number.isFinite(state.territoriesConqueredThisTurn)) {
     state.territoriesConqueredThisTurn = state.conqueredThisTurn ? 1 : 0;
   }
@@ -576,6 +636,7 @@ const nextTurn = (state: GameState) => {
   state.conqueredThisTurn = false;
   state.territoriesConqueredThisTurn = 0;
   state.fortifyUsed = false;
+  state.botAttacksThisTurn = 0;
   state.lastBattle = undefined;
   logItem(
     state,
@@ -702,6 +763,105 @@ const resolveTimedTurnEnd = (state: GameState, playerId: string) => {
   return resolveSuddenDeathTurn(state, playerId);
 };
 
+const botTerritoryScore = (state: GameState, bot: GamePlayer, territoryId: TerritoryId) => {
+  const territory = state.territories[territoryId];
+  const enemyBorders = TERRITORY_BY_ID[territoryId].adjacent.filter(
+    (adjacentId) => state.territories[adjacentId].ownerId !== bot.id,
+  ).length;
+  const mission = bot.objective?.territoryIds.includes(territoryId) ? 12 : 0;
+  return enemyBorders * 18 + mission - territory.armies * 2;
+};
+
+const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
+  const trade = validTradeSets(bot.cards)[0];
+  if ((state.phase === "reinforce" || state.phase === "attack") && bot.cards.length >= 5 && trade) {
+    return { type: "tradeCards", cardIds: trade };
+  }
+
+  if (state.phase === "setup") {
+    const target = ownedTerritories(state, bot.id)
+      .sort((left, right) =>
+        botTerritoryScore(state, bot, right.id) - botTerritoryScore(state, bot, left.id) ||
+        state.territories[left.id].armies - state.territories[right.id].armies ||
+        left.id.localeCompare(right.id),
+      )[0];
+    assertRule(target, "Il bot non ha territori su cui schierare.");
+    return { type: "placeSetup", territoryId: target.id };
+  }
+
+  if (state.phase === "reinforce") {
+    if (state.reinforcementPool <= 0) return { type: "beginAttack" };
+    const target = ownedTerritories(state, bot.id)
+      .sort((left, right) =>
+        botTerritoryScore(state, bot, right.id) - botTerritoryScore(state, bot, left.id) ||
+        left.id.localeCompare(right.id),
+      )[0];
+    assertRule(target, "Il bot non ha territori da rinforzare.");
+    return { type: "deploy", territoryId: target.id, amount: state.reinforcementPool };
+  }
+
+  if (state.phase === "attack") {
+    if (state.pendingMove) return { type: "moveAfterConquest", amount: state.pendingMove.min };
+    if (state.botAttacksThisTurn >= 6) return { type: "endAttack" };
+    const missionTargets = new Set(bot.objective?.territoryIds ?? []);
+    const candidates = ownedTerritories(state, bot.id).flatMap((fromDefinition) => {
+      const from = state.territories[fromDefinition.id];
+      return fromDefinition.adjacent
+        .filter((toId) => {
+          const to = state.territories[toId];
+          return to.ownerId !== bot.id &&
+            canAttackMatchup(from.armies, to.armies) &&
+            from.armies > to.armies;
+        })
+        .map((toId) => {
+          const to = state.territories[toId];
+          const continent = TERRITORY_BY_ID[toId].continent;
+          const completesContinent = TERRITORIES
+            .filter((territory) => territory.continent === continent && territory.id !== toId)
+            .every((territory) => state.territories[territory.id].ownerId === bot.id);
+          const score = (from.armies - to.armies) * 4 + TERRITORY_BY_ID[toId].value +
+            (missionTargets.has(toId) ? 14 : 0) + (completesContinent ? 18 : 0);
+          return { from: fromDefinition.id, to: toId, score };
+        });
+    }).sort((left, right) => right.score - left.score || left.to.localeCompare(right.to));
+    const attack = candidates[0];
+    return attack
+      ? { type: "attack", from: attack.from, to: attack.to }
+      : { type: "endAttack" };
+  }
+
+  if (state.phase === "fortify") {
+    if (state.fortifyUsed) return { type: "endTurn" };
+    const borderTargets = ownedTerritories(state, bot.id)
+      .filter((territory) => bordersEnemy(state, territory.id, bot.id))
+      .sort((left, right) =>
+        state.territories[left.id].armies - state.territories[right.id].armies ||
+        botTerritoryScore(state, bot, right.id) - botTerritoryScore(state, bot, left.id),
+      );
+    for (const target of borderTargets) {
+      const source = ownedTerritories(state, bot.id)
+        .filter((territory) => territory.id !== target.id && isConnectedThroughOwned(state, bot.id, territory.id, target.id))
+        .map((territory) => {
+          const minimum = bordersEnemy(state, territory.id, bot.id) ? 2 : 1;
+          return { territory, movable: state.territories[territory.id].armies - minimum };
+        })
+        .filter((candidate) => candidate.movable > 0)
+        .sort((left, right) => right.movable - left.movable)[0];
+      if (source) {
+        return {
+          type: "fortify",
+          from: source.territory.id,
+          to: target.id,
+          amount: Math.max(1, Math.ceil(source.movable / 2)),
+        };
+      }
+    }
+    return { type: "endTurn" };
+  }
+
+  throw new GameRuleError("Il bot non può agire in questa fase.");
+};
+
 export const applyGameAction = (original: GameState, playerId: string, action: GameAction): GameState => {
   const state = structuredClone(original);
   normalizeRuntimeState(state);
@@ -717,6 +877,14 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     return state;
   }
 
+  if (action.type === "advanceBot") {
+    assertRule(!actor.isBot, "Soltanto un giocatore reale può sincronizzare i bot.");
+    assertRule(state.phase !== "lobby" && state.phase !== "gameover", "Non c'è un turno bot da eseguire.");
+    const bot = playerById(state, state.currentPlayerId ?? "");
+    assertRule(bot.isBot && bot.status === "active", "Il giocatore corrente non è un bot.");
+    return applyGameAction(state, bot.id, chooseBotAction(state, bot));
+  }
+
   if (action.type === "updateSettings") {
     assertRule(state.phase === "lobby", "Le impostazioni sono bloccate dopo l'inizio.");
     assertRule(state.hostId === playerId, "Solo chi ospita può cambiare le impostazioni.");
@@ -727,6 +895,13 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     next.mode = "missioni";
     state.settings = next;
     logItem(state, `${actor.name} ha aggiornato le regole della sala.`);
+    return state;
+  }
+
+  if (action.type === "fillWithBots") {
+    assertRule(state.phase === "lobby", "I bot possono entrare soltanto prima della partita.");
+    assertRule(state.hostId === playerId, "Solo chi ospita può aggiungere i bot.");
+    fillLobbyWithBots(state);
     return state;
   }
 
@@ -790,13 +965,20 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     requireCurrentPlayer(state, playerId);
     const territory = state.territories[action.territoryId];
     assertRule(territory?.ownerId === playerId, "Puoi schierare solo nei tuoi territori.");
-    const amount = Math.min(3, actor.setupPool);
-    assertRule(amount > 0, "Hai già schierato tutte le armate iniziali.");
-    territory.armies += amount;
-    actor.setupPool -= amount;
-    logItem(state, `${actor.name} schiera ${amount} armate in ${TERRITORY_BY_ID[action.territoryId].name}.`, "turn");
-    if (allSetupComplete(state)) beginFirstTurn(state);
-    else advanceSetupTurn(state);
+    assertRule(actor.setupPool > 0 && state.setupBatchRemaining > 0, "Hai già completato questo blocco di schieramento.");
+    territory.armies += 1;
+    actor.setupPool -= 1;
+    state.setupBatchRemaining -= 1;
+    logItem(
+      state,
+      `${actor.name} schiera 1 armata in ${TERRITORY_BY_ID[action.territoryId].name}` +
+        `${state.setupBatchRemaining ? ` (${state.setupBatchRemaining} ancora prima del cambio)` : "."}`,
+      "turn",
+    );
+    if (actor.setupPool === 0 || state.setupBatchRemaining === 0) {
+      if (allSetupComplete(state)) beginFirstTurn(state);
+      else advanceSetupTurn(state);
+    }
     return state;
   }
 
@@ -805,13 +987,15 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     requireCurrentPlayer(state, playerId);
     assertRule(actor.setupPool > 0, "Hai già schierato tutte le armate.");
     const owned = ownedTerritories(state, playerId);
-    const amount = Math.min(3, actor.setupPool);
+    const amount = Math.min(state.setupBatchRemaining, actor.setupPool);
+    assertRule(amount > 0, "Hai già completato questo blocco di schieramento.");
     for (let index = 0; index < amount; index += 1) {
       owned.sort((left, right) =>
         state.territories[left.id].armies - state.territories[right.id].armies || left.id.localeCompare(right.id),
       );
       state.territories[owned[0].id].armies += 1;
       actor.setupPool -= 1;
+      state.setupBatchRemaining -= 1;
     }
     logItem(state, `${actor.name} distribuisce automaticamente ${amount} armate sui territori meno presidiati.`, "turn");
     if (allSetupComplete(state)) beginFirstTurn(state);
@@ -879,6 +1063,14 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(from?.ownerId === playerId, "Il territorio di partenza non è tuo.");
     assertRule(to && to.ownerId !== playerId, "Scegli un territorio avversario.");
     assertRule(TERRITORY_BY_ID[action.from].adjacent.includes(action.to), "I territori non confinano.");
+    assertRule(
+      canAttackMatchup(from.armies, to.armies),
+      from.armies === 2
+        ? "Con 2 armate puoi attaccare soltanto un territorio presidiato da 1 armata."
+        : from.armies === 3
+          ? "Con 3 armate puoi attaccare soltanto un territorio presidiato da 1 o 2 armate."
+          : "Questo attacco non può essere effettuato.",
+    );
     const dice = attackDiceForArmies(from.armies);
     assertRule(dice >= 1, "Servono almeno 2 armate per attaccare.");
     const battle = {
@@ -891,6 +1083,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
       createdAt: Date.now(),
     };
     state.pendingBattle = battle;
+    if (actor.isBot) state.botAttacksThisTurn += 1;
     const defenseDice = defenseDiceForArmies(to.armies);
     assertRule(defenseDice >= 1, "Il territorio non ha armate con cui difendersi.");
     resolveBattle(state, roll(defenseDice));

@@ -174,3 +174,15 @@ export const attackDiceForArmies = (armies: number) =>
 
 export const defenseDiceForArmies = (armies: number) =>
   Math.min(3, Math.max(0, Math.floor(armies)));
+
+/**
+ * Nella variante Challenge un attacco deve poter assorbire anche il peggior
+ * esito del lancio senza azzerare il territorio di partenza. Con 2 armate si
+ * può quindi attaccare soltanto un territorio da 1; con 3 soltanto uno da 1 o
+ * 2. Da 4 armate in poi resta valida la normale regola dei tre dadi.
+ */
+export const canAttackMatchup = (attackerArmies: number, defenderArmies: number) => {
+  const attacker = Math.floor(attackerArmies);
+  const defender = Math.floor(defenderArmies);
+  return attacker >= 2 && (attacker >= 4 || defender < attacker);
+};

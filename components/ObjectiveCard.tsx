@@ -26,12 +26,12 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
         <svg className="objective-map" viewBox={BOARD_VIEW_BOX} aria-label={objective ? `Mappa dell'obiettivo ${objective.number}` : "Obiettivo non ancora assegnato"}>
           <defs>
             <pattern id="objectiveMissingPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-              <rect width="8" height="8" fill="#d92338" />
-              <rect width="2.4" height="8" fill="#ff727f" fillOpacity=".6" />
+              <rect width="8" height="8" fill="#f5f7f5" />
+              <rect width="2.4" height="8" fill={player.color} fillOpacity=".3" />
             </pattern>
             <pattern id="objectiveSecuredPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-              <rect width="8" height="8" fill="#15975f" />
-              <rect width="2.4" height="8" fill="#80efb6" fillOpacity=".62" />
+              <rect width="8" height="8" fill={player.color} />
+              <rect width="2.4" height="8" fill="#ffffff" fillOpacity=".22" />
             </pattern>
           </defs>
           <rect width="750" height="519" rx="18" />
@@ -59,7 +59,7 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
       <div className="objective-progress" aria-label={`Obiettivo completato al ${percent}%`}>
         <span style={{ width: `${percent}%` }} />
       </div>
-      <div className="objective-legend"><span><i className="missing" /> Rosso = da conquistare</span><span><i className="secured" /> Verde = già tuo</span><b>{secured.length}/{objective?.territoryIds.length ?? 0} territori</b></div>
+      <div className="objective-legend"><span><i className="missing" /> Tinta chiara = da conquistare</span><span><i className="secured" /> Colore pieno = già tuo</span><b>{secured.length}/{objective?.territoryIds.length ?? 0} territori</b></div>
       <dl className="player-stats">
         <div><dt>{player.stats.attacks}</dt><dd>attacchi</dd></div>
         <div><dt>{player.stats.territoriesConquered}</dt><dd>conquiste</dd></div>

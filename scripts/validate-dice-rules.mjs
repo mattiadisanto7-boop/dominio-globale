@@ -1,4 +1,4 @@
-import { attackDiceForArmies, defenseDiceForArmies } from "../lib/game-data.ts";
+import { attackDiceForArmies, canAttackMatchup, defenseDiceForArmies } from "../lib/game-data.ts";
 
 const attackCases = new Map([[0, 0], [1, 0], [2, 1], [3, 2], [4, 3], [20, 3]]);
 const defenseCases = new Map([[0, 0], [1, 1], [2, 2], [3, 3], [20, 3]]);
@@ -13,4 +13,21 @@ for (const [armies, expected] of defenseCases) {
   if (actual !== expected) throw new Error(`Difesa con ${armies} armate: attesi ${expected} dadi, ottenuti ${actual}.`);
 }
 
-console.log("OK · dadi automatici: attacco 3/2/1 con 4+/3/2 armate, difesa 3/2/1 con 3+/2/1 armate");
+const matchupCases = [
+  [2, 1, true],
+  [2, 2, false],
+  [2, 8, false],
+  [3, 1, true],
+  [3, 2, true],
+  [3, 3, false],
+  [3, 9, false],
+  [4, 1, true],
+  [4, 12, true],
+];
+
+for (const [attacker, defender, expected] of matchupCases) {
+  const actual = canAttackMatchup(attacker, defender);
+  if (actual !== expected) throw new Error(`Attacco ${attacker} contro ${defender}: atteso ${expected}, ottenuto ${actual}.`);
+}
+
+console.log("OK · dadi automatici 3/2/1 e blocco preventivo 2→2+, 3→3+");

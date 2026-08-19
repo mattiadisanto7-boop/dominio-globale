@@ -3,13 +3,14 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import ActionPanel from "@/components/ActionPanel";
 import Brand from "@/components/Brand";
+import CardsVault from "@/components/CardsVault";
 import DiceArena, { GraphicDiceRow } from "@/components/DiceArena";
 import DrawnCardPanel from "@/components/DrawnCardPanel";
 import LobbyScreen from "@/components/LobbyScreen";
 import ObjectiveCard from "@/components/ObjectiveCard";
 import SoundControl from "@/components/SoundControl";
 import WorldMap from "@/components/WorldMap";
-import { CONTINENTS, TERRITORIES, TERRITORY_BY_ID, type ContinentId, type TerritoryId } from "@/lib/game-data";
+import { CONTINENTS, TERRITORIES, TERRITORY_BY_ID, canAttackMatchup, type ContinentId, type TerritoryId } from "@/lib/game-data";
 import { gameSound, type GameSound } from "@/lib/sound-engine";
 import type { GameAction, PublicGameState, RoomEnvelope } from "@/lib/game-types";
 
@@ -21,6 +22,7 @@ const readError = (payload: unknown, fallback: string) => payload && typeof payl
 
 const ACTION_SOUNDS: Partial<Record<GameAction["type"], GameSound>> = {
   updateSettings: "ui",
+  fillWithBots: "turn",
   startGame: "turn",
   kickPlayer: "ui",
   placeSetup: "deploy",
@@ -46,13 +48,15 @@ function instruction(state: PublicGameState, meId: string) {
   const mine = state.currentPlayerId === meId;
   if (state.phase === "setup") {
     const current = state.players.find((player) => player.id === state.currentPlayerId);
-    return mine ? "Tocca un tuo territorio: schiererai il prossimo blocco di 3 armate." : `${current?.name ?? "Il prossimo comandante"} sta schierando 3 armate.`;
+    return mine
+      ? `Piazza 1 armata per volta, anche su territori diversi: ${state.setupBatchRemaining} prima del cambio.`
+      : `${current?.name ?? "Il prossimo comandante"} sta piazzando le sue ${state.setupBatchRemaining} armate prima del cambio.`;
   }
   if (state.phase === "reinforce") {
     const me = state.players.find((player) => player.id === meId);
     return mine ? me && me.cardCount >= 5 ? "Gioca prima il tris obbligatorio, poi schiera i rinforzi." : "Tocca un tuo territorio per rinforzarlo." : "L'avversario sta schierando i rinforzi.";
   }
-  if (state.phase === "attack") return mine ? "Scegli un tuo territorio, poi un confine nemico." : "Osserva la battaglia: i dadi di difesa vengono lanciati automaticamente.";
+  if (state.phase === "attack") return mine ? "Scegli un tuo territorio, poi un bersaglio consentito evidenziato sul confine." : "Osserva la battaglia: i dadi di difesa vengono lanciati automaticamente.";
   if (state.phase === "fortify") return mine ? "Sposta armate o termina il turno." : "L'avversario sta consolidando il dominio.";
   return "";
 }
@@ -63,7 +67,7 @@ function PlayerStrip({ state, meId }: { state: PublicGameState; meId: string }) 
     const armies = territories.reduce((sum, territory) => sum + state.territories[territory.id].armies, 0);
     return (
       <article key={player.id} className={`strip-player ${state.currentPlayerId === player.id ? "current" : ""} ${player.status !== "active" ? "inactive" : ""}`} style={{ "--player-color": player.color } as React.CSSProperties}>
-        <span className="strip-avatar">{player.name.slice(0, 1).toUpperCase()}</span><div><b>{player.name}{player.id === meId ? " · tu" : ""}</b><small>{territories.length} territori · {armies} armate · {player.cardCount} carte</small></div>
+        <span className="strip-avatar">{player.isBot ? "◆" : player.name.slice(0, 1).toUpperCase()}</span><div><b>{player.name}{player.isBot ? " · BOT" : player.id === meId ? " · tu" : ""}</b><small>{territories.length} territori · {armies} armate · {player.cardCount} carte</small></div>
         {state.currentPlayerId === player.id && state.phase !== "gameover" && <span className="turn-flag">TURNO</span>}
         {player.status !== "active" && <span className="turn-flag eliminated">{player.status === "resigned" ? "RITIRATO" : "ELIMINATO"}</span>}
       </article>
@@ -275,7 +279,11 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     try {
       const response = await fetch(`/api/rooms/${state.code}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ intent: "action", version: envelope.version, action: gameAction }) });
       const payload = (await response.json()) as RoomEnvelope & { error?: string };
-      if (response.status === 409) { await load(false); throw new Error("La mappa è appena cambiata. Ho sincronizzato tutto: riprova ora."); }
+      if (response.status === 409) {
+        await load(false);
+        if (gameAction.type === "advanceBot") return;
+        throw new Error("La mappa è appena cambiata. Ho sincronizzato tutto: riprova ora.");
+      }
       if (!response.ok) throw new Error(readError(payload, "Azione non riuscita."));
       if (payload.state.phase !== state.phase || payload.state.currentPlayerId !== state.currentPlayerId) {
         setSelectedFrom(undefined);
@@ -284,9 +292,34 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       onEnvelope(payload);
       const successSound = ACTION_SOUNDS[gameAction.type];
       if (successSound) gameSound.play(successSound);
-    } catch (caught) { gameSound.play("error"); setError(caught instanceof Error ? caught.message : "Azione non riuscita."); }
+    } catch (caught) {
+      if (gameAction.type !== "advanceBot") {
+        gameSound.play("error");
+        setError(caught instanceof Error ? caught.message : "Azione non riuscita.");
+      }
+    }
     finally { setBusy(false); }
   }, [busy, envelope.version, load, onEnvelope, state.code, state.currentPlayerId, state.phase, token]);
+
+  const currentPlayer = state.players.find((player) => player.id === state.currentPlayerId);
+  useEffect(() => {
+    if (
+      !currentPlayer?.isBot ||
+      busy ||
+      state.phase === "lobby" ||
+      state.phase === "gameover"
+    ) return;
+    const battleAge = state.lastBattle?.at ? Date.now() - state.lastBattle.at : Number.POSITIVE_INFINITY;
+    const delay = state.pendingMove
+      ? Math.max(700, 3500 - battleAge)
+      : state.phase === "attack" && battleAge < 3500
+        ? Math.max(700, 3500 - battleAge)
+        : state.phase === "setup"
+          ? 620
+          : 900;
+    const timer = window.setTimeout(() => void action({ type: "advanceBot" }), delay);
+    return () => window.clearTimeout(timer);
+  }, [action, busy, currentPlayer?.isBot, state.lastBattle?.at, state.pendingMove, state.phase]);
 
   const onTerritory = (id: TerritoryId) => {
     gameSound.play("ui");
@@ -295,10 +328,34 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     if (state.currentPlayerId !== meId || busy) return;
     if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0 && me.cardCount < 5) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
     if (state.phase === "attack" && !state.pendingBattle && !state.pendingMove) {
-      if (!selectedFrom) { if (territory.ownerId === meId && territory.armies > 1) setSelectedFrom(id); }
+      if (!selectedFrom) {
+        if (territory.ownerId === meId && territory.armies > 1) {
+          setError("");
+          setSelectedFrom(id);
+        }
+      }
       else if (id === selectedFrom) { setSelectedFrom(undefined); setSelectedTo(undefined); }
-      else if (territory.ownerId === meId) { if (territory.armies > 1) { setSelectedFrom(id); setSelectedTo(undefined); } }
-      else if (TERRITORY_BY_ID[selectedFrom].adjacent.includes(id)) setSelectedTo(id);
+      else if (territory.ownerId === meId) {
+        if (territory.armies > 1) {
+          setError("");
+          setSelectedFrom(id);
+          setSelectedTo(undefined);
+        }
+      }
+      else if (TERRITORY_BY_ID[selectedFrom].adjacent.includes(id)) {
+        const sourceArmies = state.territories[selectedFrom].armies;
+        if (canAttackMatchup(sourceArmies, territory.armies)) {
+          setError("");
+          setSelectedTo(id);
+        } else {
+          setSelectedTo(undefined);
+          setError(
+            sourceArmies === 2
+              ? "Da 2 armate puoi attaccare soltanto un territorio con 1 armata."
+              : "Da 3 armate puoi attaccare soltanto un territorio con 1 o 2 armate.",
+          );
+        }
+      }
       return;
     }
     if (state.phase === "fortify" && !state.fortifyUsed && territory.ownerId === meId) {
@@ -341,6 +398,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
           <div className="under-board-grid activity-only"><ActivityLog state={state} /></div>
         </section>
         <aside className="control-column">
+          <CardsVault state={state} player={me} />
           <DrawnCardPanel player={me} />
           <TimedEndgamePanel state={state} remaining={remaining} />
           <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />

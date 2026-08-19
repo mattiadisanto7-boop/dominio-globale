@@ -39,6 +39,7 @@ export type PlayerStats = {
 export type GamePlayer = {
   id: string;
   name: string;
+  isBot?: boolean;
   colorId: string;
   color: string;
   status: PlayerStatus;
@@ -149,11 +150,13 @@ export type GameState = {
   currentPlayerId?: string;
   players: GamePlayer[];
   territories: Record<TerritoryId, TerritoryState>;
+  setupBatchRemaining: number;
   reinforcementPool: number;
   resumePhase?: "attack";
   conqueredThisTurn: boolean;
   territoriesConqueredThisTurn: number;
   fortifyUsed: boolean;
+  botAttacksThisTurn: number;
   pendingBattle?: BattleState;
   pendingMove?: MoveAfterConquest;
   lastBattle?: BattleReport;
@@ -187,6 +190,7 @@ export type RoomEnvelope = {
 
 export type GameAction =
   | { type: "updateSettings"; settings: Partial<GameSettings> }
+  | { type: "fillWithBots" }
   | { type: "startGame" }
   | { type: "kickPlayer"; playerId: string }
   | { type: "placeSetup"; territoryId: TerritoryId }
@@ -200,5 +204,6 @@ export type GameAction =
   | { type: "fortify"; from: TerritoryId; to: TerritoryId; amount: number }
   | { type: "endTurn" }
   | { type: "sendMessage"; text: string }
+  | { type: "advanceBot" }
   | { type: "resign" }
   | { type: "rematch" };

@@ -14,12 +14,12 @@ function readError(payload: unknown, fallback: string) {
 
 function RulesModal({ onClose }: { onClose: () => void }) {
   const steps = [
-    ["01", "Schiera", "Ricevi territori casuali. A turno ogni comandante piazza un blocco di 3 armate; l'ultimo blocco può essere più piccolo. Nel duello compare anche un impero neutrale."],
+    ["01", "Schiera", "Ricevi territori casuali. A turno piazzi 3 armate, una per clic e anche su territori differenti; poi il comando passa. Il timer parte soltanto quando tutti hanno finito."],
     ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti. Appena piazzi l'ultima, il gioco passa automaticamente all'attacco."],
-    ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia attacco e difesa: 3/2/1 dadi con 4+/3/2 armate in attacco e 3+/2/1 in difesa; i pareggi favoriscono la difesa."],
+    ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia i dadi massimi; da 2 armate non puoi attaccarne 2+, da 3 non puoi attaccarne 3+. I pareggi favoriscono la difesa."],
     ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico. Se la partenza confina con un nemico, devono restarvi almeno 2 armate; l'occupazione minima dopo una conquista applica da sola l'eventuale eccezione."],
-    ["05", "Completa la carta", "Conquista tutti e soli i territori richiesti dalla tua carta segreta. Rosso indica ciò che manca, verde ciò che controlli già; le carte territorio pescate restano private."],
-    ["06", "Chiudi la campagna", "La modalità principale dura 90 minuti: si completa il giro in corso, si gioca l'ultimo giro e parte la sdadata a soglia crescente da 4 a 7."],
+    ["05", "Completa la carta", "I territori richiesti usano il tuo colore: pieno se sono già tuoi, chiarissimo se mancano. Il pulsante Carte apre in privato l'intero mazzo che possiedi."],
+    ["06", "Chiudi la campagna", "Puoi riempire i posti liberi con generali bot. La modalità principale dura 90 minuti dopo lo schieramento, poi ultimo giro e sdadata da 4 a 7."],
   ];
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Regole del gioco">
@@ -82,7 +82,7 @@ export default function HomeScreen({ initialCode, onEnter }: { initialCode: stri
         <div className="hero-copy">
           <span className="eyebrow"><i /> Strategia online · 2–6 giocatori</span>
           <h1>Il mondo non si conquista per caso.</h1>
-          <p>Il tabellone mondiale completo, le 16 carte Challenge da 86 punti, obiettivi evidenziati e dadi automatici animati. La modalità principale dura 90 minuti, ultimo giro e sdadata finale.</p>
+          <p>Il tabellone mondiale completo, le 16 carte Challenge da 86 punti, bot strategici, obiettivi personali e dadi automatici animati. La modalità principale dura 90 minuti dopo lo schieramento, ultimo giro e sdadata finale.</p>
           <div className="feature-row"><span><b>42</b> territori</span><span><b>16</b> obiettivi</span><span><b>86</b> punti</span></div>
         </div>
         <div className="war-room-card">

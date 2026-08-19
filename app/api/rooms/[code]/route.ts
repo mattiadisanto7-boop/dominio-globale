@@ -1,4 +1,3 @@
-import { PLAYER_COLORS } from "@/lib/game-data";
 import { addLobbyPlayer, applyGameAction, GameRuleError, sanitizeState } from "@/lib/game-engine";
 import {
   authenticatePlayer,
@@ -71,7 +70,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
       const token = createSecretToken();
       const next = structuredClone(stored.state);
       addLobbyPlayer(next, { id: playerId, name });
-      const color = PLAYER_COLORS[next.players.length - 1].hex;
+      const color = next.players.find((player) => player.id === playerId)!.color;
       await insertRoomPlayer(code, { id: playerId, name, color, tokenHash: await hashToken(token) });
       try {
         const version = await saveGame(code, stored.version, next);
@@ -100,4 +99,3 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     return errorResponse(error);
   }
 }
-

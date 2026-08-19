@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { TERRITORIES, TERRITORY_BY_ID, type TerritoryId } from "@/lib/game-data";
+import { TERRITORIES, TERRITORY_BY_ID, canAttackMatchup, type TerritoryId } from "@/lib/game-data";
 import {
   BOARD_TERRITORY_TRANSFORM,
   BOARD_VIEW_BOX,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/territory-shapes";
 import type { PublicGameState } from "@/lib/game-types";
 
-type MapStyle = CSSProperties & { "--owner-color": string };
+type MapStyle = CSSProperties & { "--owner-color"?: string; "--mission-color"?: string };
 
 export default function WorldMap({
   state,
@@ -39,8 +39,14 @@ export default function WorldMap({
   const objectiveSecured = new Set<TerritoryId>(
     objectiveIds.filter((id) => state.territories[id].ownerId === meId),
   );
+  const missionColor = me?.color ?? "#d5cfbd";
   const validTargets = selectedFrom
-    ? new Set<TerritoryId>(TERRITORY_BY_ID[selectedFrom].adjacent)
+    ? new Set<TerritoryId>(TERRITORY_BY_ID[selectedFrom].adjacent.filter((id) =>
+      state.phase !== "attack" || (
+        state.territories[id].ownerId !== meId &&
+        canAttackMatchup(state.territories[selectedFrom].armies, state.territories[id].armies)
+      ),
+    ))
     : new Set<TerritoryId>();
 
   return (
@@ -48,7 +54,7 @@ export default function WorldMap({
       <div className="board-corner corner-one" /><div className="board-corner corner-two" />
       <div className="board-corner corner-three" /><div className="board-corner corner-four" />
       {me?.objective && (
-        <div className="map-objective-key" aria-label={`Obiettivo ${me.objective.number}: ${objectiveSecured.size} territori conquistati su ${objectiveIds.length}`}>
+        <div className="map-objective-key" style={{ "--mission-color": missionColor } as MapStyle} aria-label={`Obiettivo ${me.objective.number}: ${objectiveSecured.size} territori conquistati su ${objectiveIds.length}`}>
           <b>OBIETTIVO {me.objective.number}</b>
           <span><i className="mission-missing" /> da conquistare</span>
           <span><i className="mission-secured" /> già tuo</span>
@@ -60,14 +66,6 @@ export default function WorldMap({
           <filter id="tokenShadow" x="-100%" y="-100%" width="300%" height="300%">
             <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" floodColor="#000" floodOpacity=".82" />
           </filter>
-          <pattern id="missionMissingPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-            <rect width="7" height="7" fill="#e35c68" fillOpacity=".075" />
-            <rect width="1.2" height="7" fill="#ffb1b7" fillOpacity=".11" />
-          </pattern>
-          <pattern id="missionSecuredPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-            <rect width="7" height="7" fill="#45b982" fillOpacity=".065" />
-            <rect width="1.2" height="7" fill="#a9f5d1" fillOpacity=".09" />
-          </pattern>
           <marker id="attackArrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
             <path d="M0 0 L0 6 L6 3 Z" fill="#ffe5a5" />
           </marker>
@@ -99,7 +97,7 @@ export default function WorldMap({
               <g
                 key={territory.id}
                 className={className}
-                style={{ "--owner-color": ownerColor } as MapStyle}
+                style={{ "--owner-color": ownerColor, "--mission-color": missionColor } as MapStyle}
                 onClick={() => onTerritory(territory.id)}
                 role="button"
                 tabIndex={0}
@@ -137,7 +135,7 @@ export default function WorldMap({
             const mission = objectiveTargets.has(territory.id);
             const secured = objectiveSecured.has(territory.id);
             return (
-              <g key={territory.id} style={{ "--owner-color": ownerColor } as MapStyle}>
+              <g key={territory.id} style={{ "--owner-color": ownerColor, "--mission-color": missionColor } as MapStyle}>
                 <g className="army-token" transform={`translate(${center.x} ${center.y - 5.5})`} filter="url(#tokenShadow)">
                   <g className="tank-piece" transform="translate(3 0) rotate(-10)">
                     <rect className="tank-track" x="-7.5" y="-4.8" width="15" height="9.6" rx="3.2" />

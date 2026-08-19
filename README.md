@@ -12,15 +12,17 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 - sincronizzazione online, riconnessione e salvataggio persistente;
 - tabellone vettoriale realistico con 42 territori cliccabili, rotte marittime e pedine a forma di carro armato colorato con conteggio delle armate;
 - esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti, disegnate con le stesse sagome reali del tabellone;
-- territori della missione indicati sulla plancia con una tinta e un bordo discreti (rosso se mancanti, verde se già controllati) e mostrati in modo più netto sulla carta obiettivo in fondo alla schermata;
-- schieramento iniziale alternato a blocchi di 3 armate e passaggio automatico all'attacco dopo l'ultimo rinforzo;
+- territori della missione indicati con il colore personale: pieno e intenso se controllati, chiarissimo se ancora da conquistare, sia sulla plancia sia sulla carta obiettivo;
+- schieramento iniziale alternato: 3 armate per passaggio, piazzate una alla volta anche su tre territori differenti, e passaggio automatico all'attacco dopo l'ultimo rinforzo;
 - dadi animati e conteggio regolamentare: un solo clic dell'attaccante lancia automaticamente attacco 3/2/1 con 4+/3/2 armate e difesa 3/2/1 con 3+/2/1 armate;
+- blocco preventivo degli attacchi che potrebbero azzerare la partenza: 2 armate non possono attaccarne 2 o più, 3 armate non possono attaccarne 3 o più;
 - presidio minimo di 2 armate quando uno spostamento volontario parte da un territorio confinante con il nemico; l'eccezione viene applicata automaticamente quando l'occupazione minima dopo una conquista costringe a lasciarne una;
 - celebrazione a tutto schermo, particelle e fanfara quando un giocatore completa la conquista di un continente;
-- carta territorio appena pescata mostrata soltanto al proprietario e consultabile anche durante i turni avversari;
+- carta appena pescata mostrata soltanto al proprietario e pulsante **Carte** per consultare l'intero mazzo privato anche durante i turni avversari;
 - paesaggio sonoro militare sintetizzato dal browser: cingoli e metallo per gli schieramenti, dadi, artiglieria, conquiste, turni, carte e messaggi;
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
-- modalità principale Challenge da 90 minuti: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
+- modalità principale Challenge da 90 minuti, con timer avviato soltanto dopo l'ultimo piazzamento iniziale: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
+- riempimento dei posti liberi con bot strategici che schierano, rinforzano, attaccano, conquistano, spostano e pescano carte usando lo stesso motore di regole dei giocatori;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
 
 Il progetto usa **Next.js**, **React** e **PostgreSQL**. Nome, grafica e codice sono originali e non rappresentano un prodotto ufficiale RisiKo!.
