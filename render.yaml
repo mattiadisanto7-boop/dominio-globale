@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: dominio-globale
+    runtime: node
+    region: frankfurt
+    plan: free
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: DATABASE_SSL
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dominio-globale-postgres
+          property: connectionString
+
+databases:
+  - name: dominio-globale-postgres
+    region: frankfurt
+    plan: free
+    databaseName: dominio_globale
+    user: dominio_globale

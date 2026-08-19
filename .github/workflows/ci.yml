@@ -1,0 +1,24 @@
+name: Controlli progetto
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+      - name: Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installa le dipendenze
+        run: npm ci
+      - name: Esegue tutti i controlli
+        run: npm run check
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
