@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
+import { GraphicDiceRow, PipDie } from "@/components/DiceArena";
 import { SYMBOL_LABELS, TERRITORY_BY_ID, type TerritoryId } from "@/lib/game-data";
 import type { GameAction, PublicPlayer, RoomEnvelope } from "@/lib/game-types";
 
-const DIE = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
-
 export function DiceRow({ values, tone }: { values: number[]; tone: "attack" | "defense" }) {
-  return <div className={`dice-row ${tone}`}>{values.map((value, index) => <span key={`${value}-${index}`}>{DIE[value]}</span>)}</div>;
+  return <GraphicDiceRow values={values} tone={tone} />;
 }
 
 function CardHand({ player, selected, onToggle }: { player: PublicPlayer; selected: string[]; onToggle: (id: string) => void }) {
@@ -84,7 +83,7 @@ export default function ActionPanel({
           <div className="action-kicker">ATTACCO IN ARRIVO</div><h2>Difendi {name(battle.to)}</h2>
           <p>{current?.name} ha ottenuto:</p><DiceRow values={battle.attackerDice} tone="attack" />
           <p>Scegli i dadi di difesa. In caso di parità, vinci tu.</p>
-          <div className="dice-choice">{Array.from({ length: maxDefense }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxDefense) === value ? "active" : ""} onClick={() => setDice(value)}>{value} {value === 1 ? "dado" : "dadi"}</button>)}</div>
+          <div className="dice-choice">{Array.from({ length: maxDefense }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxDefense) === value ? "active" : ""} onClick={() => setDice(value)}><PipDie value={value} tone="defense" />{value} {value === 1 ? "dado" : "dadi"}</button>)}</div>
           <button className="danger-button full-button" disabled={busy} onClick={() => action({ type: "defend", dice: Math.min(dice, maxDefense) })}>Lancia e difendi</button>
         </section>
       );
@@ -123,7 +122,7 @@ export default function ActionPanel({
           : state.pendingMove ? <p>Completa lo spostamento dopo la conquista.</p>
           : selectedFrom && selectedTo ? <>
             <h2>Prepara l&apos;attacco</h2><div className="battle-route"><span>{name(selectedFrom)} <small>{state.territories[selectedFrom].armies}</small></span><b>→</b><span>{name(selectedTo)} <small>{state.territories[selectedTo].armies}</small></span></div>
-            <p>Quanti dadi vuoi lanciare?</p><div className="dice-choice">{Array.from({ length: maxAttackDice }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxAttackDice) === value ? "active" : ""} onClick={() => setDice(value)}>{DIE[value]} {value}</button>)}</div>
+            <p>Quanti dadi vuoi lanciare?</p><div className="dice-choice">{Array.from({ length: maxAttackDice }, (_, index) => index + 1).map((value) => <button key={value} className={Math.min(dice, maxAttackDice) === value ? "active" : ""} onClick={() => setDice(value)}><PipDie value={value} tone="attack" />{value}</button>)}</div>
             <button className="danger-button full-button" disabled={busy} onClick={async () => { await action({ type: "attack", from: selectedFrom, to: selectedTo, dice: Math.min(dice, maxAttackDice) }); setSelectedTo(undefined); }}>Lancia i dadi d&apos;attacco</button>
             <button className="text-button" onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); }}>Cambia territori</button>
           </> : <><h2>{selectedFrom ? "Scegli il bersaglio" : "Scegli da dove attaccare"}</h2><p>{selectedFrom ? `Hai selezionato ${name(selectedFrom)}. Ora tocca un territorio nemico confinante.` : "Tocca un tuo territorio con almeno 2 armate, poi un confine avversario."}</p>{selectedFrom && <button className="text-button" onClick={() => setSelectedFrom(undefined)}>Annulla selezione</button>}</>}

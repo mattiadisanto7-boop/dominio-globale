@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "validate:objectives": "node scripts/validate-objectives.mjs",
+    "check": "npm run validate:objectives && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "next": "16.2.6",

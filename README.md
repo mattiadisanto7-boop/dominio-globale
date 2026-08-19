@@ -10,10 +10,10 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 
 - stanze private con codice di sei caratteri;
 - sincronizzazione online, riconnessione e salvataggio persistente;
-- 42 territori, 6 continenti e variante bilanciata per due giocatori;
-- obiettivi segreti o dominio globale;
-- rinforzi, attacchi fino a tre dadi, difesa interattiva e fortificazione;
-- carte territorio, tris, jolly ed eliminazioni;
+- tabellone illustrato con 42 territori cliccabili, valori-confine, rotte marittime e pedine;
+- esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti;
+- dadi animati, difesa interattiva fino a tre dadi ed effetti sonori sintetizzati dal browser;
+- rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
 - modalità classica o a tempo;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
 
@@ -73,6 +73,7 @@ Apri `http://localhost:3000`.
 npm run dev        # sviluppo
 npm run lint       # controllo ESLint
 npm run typecheck  # controllo TypeScript
+npm run validate:objectives # verifica 16 carte, connessione e 86 punti
 npm run build      # build di produzione
 npm run start      # avvio della build
 ```
@@ -82,5 +83,6 @@ npm run start      # avvio della build
 - Le credenziali delle stanze restano nel `localStorage` del browser.
 - Sul server vengono salvati solo gli hash SHA-256 dei token di accesso.
 - Gli aggiornamenti usano un numero di versione per evitare sovrascritture concorrenti.
+- Gli effetti audio non richiedono file esterni: sono generati in tempo reale con Web Audio e possono essere disattivati.
 - Il database utilizza query parametrizzate e transazioni PostgreSQL.
 - `/api/health` verifica sia il servizio web sia la connessione al database.

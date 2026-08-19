@@ -8,7 +8,7 @@ export type GamePhase =
   | "fortify"
   | "gameover";
 
-export type GameMode = "missioni" | "dominio";
+export type GameMode = "missioni";
 
 export type PlayerStatus = "active" | "eliminated" | "resigned";
 
@@ -22,8 +22,9 @@ export type Objective = {
   id: string;
   title: string;
   description: string;
-  targetPlayerId?: string;
-  fallback?: string;
+  number: number;
+  points: 86;
+  territoryIds: TerritoryId[];
 };
 
 export type PlayerStats = {

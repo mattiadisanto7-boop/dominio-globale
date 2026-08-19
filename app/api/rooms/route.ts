@@ -23,7 +23,6 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as {
       name?: string;
       maxPlayers?: number;
-      mode?: string;
       timeLimitMinutes?: number;
     };
     const name = cleanName(payload.name);
@@ -39,7 +38,7 @@ export async function POST(request: Request) {
       : 0;
     const settings: GameSettings = {
       maxPlayers,
-      mode: payload.mode === "dominio" ? "dominio" : "missioni",
+      mode: "missioni",
       timeLimitMinutes,
       defense: "interactive",
     };
@@ -63,4 +62,3 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 500 });
   }
 }
-

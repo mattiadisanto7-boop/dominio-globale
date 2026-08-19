@@ -1,18 +1,39 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import ActionPanel, { DiceRow } from "@/components/ActionPanel";
+import ActionPanel from "@/components/ActionPanel";
 import Brand from "@/components/Brand";
+import DiceArena, { GraphicDiceRow } from "@/components/DiceArena";
 import LobbyScreen from "@/components/LobbyScreen";
+import ObjectiveCard from "@/components/ObjectiveCard";
+import SoundControl from "@/components/SoundControl";
 import WorldMap from "@/components/WorldMap";
 import { CONTINENTS, TERRITORIES, TERRITORY_BY_ID, type ContinentId, type TerritoryId } from "@/lib/game-data";
-import type { GameAction, PublicGameState, PublicPlayer, RoomEnvelope } from "@/lib/game-types";
+import { gameSound, type GameSound } from "@/lib/sound-engine";
+import type { GameAction, PublicGameState, RoomEnvelope } from "@/lib/game-types";
 
 const PHASE_LABELS: Record<PublicGameState["phase"], string> = {
   lobby: "Sala d'attesa", setup: "Schieramento", reinforce: "Rinforzi", attack: "Attacco", fortify: "Spostamento", gameover: "Partita conclusa",
 };
 
 const readError = (payload: unknown, fallback: string) => payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string" ? payload.error : fallback;
+
+const ACTION_SOUNDS: Partial<Record<GameAction["type"], GameSound>> = {
+  updateSettings: "ui",
+  startGame: "turn",
+  kickPlayer: "ui",
+  placeSetup: "deploy",
+  autoSetup: "deploy",
+  deploy: "deploy",
+  tradeCards: "cards",
+  beginAttack: "turn",
+  moveAfterConquest: "deploy",
+  endAttack: "ui",
+  fortify: "fortify",
+  sendMessage: "message",
+  resign: "ui",
+  rematch: "turn",
+};
 
 function formatTime(milliseconds: number) {
   const total = Math.max(0, Math.floor(milliseconds / 1000));
@@ -43,10 +64,6 @@ function PlayerStrip({ state, meId }: { state: PublicGameState; meId: string }) 
   })}</div>;
 }
 
-function ObjectiveCard({ player }: { player: PublicPlayer }) {
-  return <article className="objective-card"><div><span>OBIETTIVO SEGRETO</span><small>Solo tu puoi leggerlo</small></div><h3>{player.objective?.title ?? "Missione in preparazione"}</h3><p>{player.objective?.description ?? "L'obiettivo verrà assegnato all'inizio della partita."}</p>{player.objective?.fallback && <em>{player.objective.fallback}</em>}<dl className="player-stats"><div><dt>{player.stats.attacks}</dt><dd>attacchi</dd></div><div><dt>{player.stats.territoriesConquered}</dt><dd>conquiste</dd></div><div><dt>{player.stats.armiesDefeated}</dt><dd>armate eliminate</dd></div></dl></article>;
-}
-
 function ActivityLog({ state }: { state: PublicGameState }) {
   return <details className="activity-log"><summary>Registro della campagna <span>{state.log.length}</span></summary><div>{state.log.slice(0, 14).map((item) => <p key={item.id} className={item.kind}><time>{new Date(item.at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</time>{item.text}</p>)}</div></details>;
 }
@@ -74,7 +91,7 @@ function ChatDrawer({ state, meId, action }: { state: PublicGameState; meId: str
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) end.current?.scrollIntoView({ behavior: "smooth" }); }, [open, state.messages.length]);
   const send = async (event: FormEvent) => { event.preventDefault(); if (!text.trim()) return; const message = text; setText(""); await action({ type: "sendMessage", text: message }); };
-  return <><button className={`chat-fab ${open ? "open" : ""}`} onClick={() => setOpen((value) => !value)}>{open ? "×" : "✦"}<span>{open ? "Chiudi" : "Diplomazia"}</span></button>{open && <aside className="chat-drawer"><div className="chat-heading"><div><b>Canale diplomatico</b><small>Visibile a tutta la sala</small></div></div><div className="chat-messages">
+  return <><button className={`chat-fab ${open ? "open" : ""}`} onClick={() => { gameSound.play("ui"); setOpen((value) => !value); }}>{open ? "×" : "✦"}<span>{open ? "Chiudi" : "Diplomazia"}</span></button>{open && <aside className="chat-drawer"><div className="chat-heading"><div><b>Canale diplomatico</b><small>Visibile a tutta la sala</small></div></div><div className="chat-messages">
     {!state.messages.length && <p className="empty-chat">Nessun messaggio. Una tregua sospetta…</p>}
     {state.messages.map((message) => { const player = state.players.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.playerId === meId ? "mine" : ""}`} key={message.id}><small style={{ color: player?.color }}>{player?.name}</small><p>{message.text}</p></div>; })}<div ref={end} />
   </div><form onSubmit={send}><input value={text} onChange={(event) => setText(event.target.value.slice(0, 180))} placeholder="Scrivi un messaggio…" /><button>Invia</button></form></aside>}</>;
@@ -87,6 +104,41 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   const [setupAmount, setSetupAmount] = useState(1), [deployAmount, setDeployAmount] = useState(1);
   const [now, setNow] = useState(0), [menuOpen, setMenuOpen] = useState(false);
   const loading = useRef(false);
+  const audioState = useRef({
+    pendingAt: state.pendingBattle?.createdAt,
+    battleAt: state.lastBattle?.at,
+    currentPlayerId: state.currentPlayerId,
+    phase: state.phase,
+    messageCount: state.messages.length,
+  });
+
+  useEffect(() => {
+    const previous = audioState.current;
+    const timers: number[] = [];
+    if (state.pendingBattle?.createdAt && state.pendingBattle.createdAt !== previous.pendingAt) {
+      gameSound.play("dice");
+    }
+    if (state.lastBattle?.at && state.lastBattle.at !== previous.battleAt) {
+      gameSound.play("dice");
+      timers.push(window.setTimeout(() => gameSound.play(state.lastBattle?.conquered ? "conquest" : "battle"), 760));
+    }
+    if (state.phase === "gameover" && previous.phase !== "gameover") {
+      timers.push(window.setTimeout(() => gameSound.play("victory"), 360));
+    } else if (state.currentPlayerId && state.currentPlayerId !== previous.currentPlayerId) {
+      gameSound.play("turn");
+    }
+    if (state.messages.length > previous.messageCount && state.messages.at(-1)?.playerId !== meId) {
+      gameSound.play("message");
+    }
+    audioState.current = {
+      pendingAt: state.pendingBattle?.createdAt,
+      battleAt: state.lastBattle?.at,
+      currentPlayerId: state.currentPlayerId,
+      phase: state.phase,
+      messageCount: state.messages.length,
+    };
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.messages, state.pendingBattle?.createdAt, state.phase]);
 
   const load = useCallback(async (silent = true) => {
     if (loading.current) return; loading.current = true;
@@ -122,11 +174,14 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
         setSelectedTo(undefined);
       }
       onEnvelope(payload);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Azione non riuscita."); }
+      const successSound = ACTION_SOUNDS[gameAction.type];
+      if (successSound) gameSound.play(successSound);
+    } catch (caught) { gameSound.play("error"); setError(caught instanceof Error ? caught.message : "Azione non riuscita."); }
     finally { setBusy(false); }
   }, [busy, envelope.version, load, onEnvelope, state.code, state.currentPlayerId, state.phase, token]);
 
   const onTerritory = (id: TerritoryId) => {
+    gameSound.play("ui");
     const territory = state.territories[id], me = state.players.find((player) => player.id === meId)!;
     if (state.phase === "setup" && territory.ownerId === meId && me.setupPool > 0) { action({ type: "placeSetup", territoryId: id, amount: Math.max(1, Math.min(setupAmount, me.setupPool)) }); return; }
     if (state.currentPlayerId !== meId || busy) return;
@@ -151,16 +206,16 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
 
   return (
     <main className="game-shell">
-      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={remaining <= 0 ? "expired" : ""}><small>TIME ATTACK</small><b>{formatTime(remaining)}</b></span>}<button className="room-chip" onClick={() => navigator.clipboard.writeText(state.code)}><small>SALA</small><b>{state.code}</b></button></div><button className="menu-button" onClick={() => setMenuOpen((value) => !value)}>•••</button>
+      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={remaining <= 0 ? "expired" : ""}><small>TIME ATTACK</small><b>{formatTime(remaining)}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
         {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{state.phase !== "gameover" && <button className="danger-text" onClick={() => action({ type: "resign" })}>Abbandona la partita</button>}<button onClick={onLeave}>Torna al menu</button></div>}
       </header>
       <PlayerStrip state={state} meId={meId} />
       <div className="game-layout">
         <section className="board-column">
           <div className="board-heading"><div><span className="live-dot" /> {instruction(state, meId)}</div><div className="continent-bonuses">{(Object.keys(CONTINENTS) as ContinentId[]).map((id) => <span key={id} style={{ "--continent-color": CONTINENTS[id].color } as React.CSSProperties}>{CONTINENTS[id].name} +{CONTINENTS[id].bonus}</span>)}</div></div>
-          <WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} />
-          {state.lastBattle && <div className="last-battle"><span>ULTIMO LANCIO</span><b>{TERRITORY_BY_ID[state.lastBattle.from].short} → {TERRITORY_BY_ID[state.lastBattle.to].short}</b><DiceRow values={state.lastBattle.attackerDice} tone="attack" /><DiceRow values={state.lastBattle.defenderDice} tone="defense" /><small>{state.lastBattle.attackerLosses} perdite attacco · {state.lastBattle.defenderLosses} difesa</small></div>}
-          <div className="under-board-grid"><ObjectiveCard player={me} /><ActivityLog state={state} /></div>
+          <div className="board-stage"><WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} /><DiceArena state={state} /></div>
+          {state.lastBattle && <div className="last-battle"><span>ULTIMO LANCIO</span><b>{TERRITORY_BY_ID[state.lastBattle.from].short} → {TERRITORY_BY_ID[state.lastBattle.to].short}</b><GraphicDiceRow values={state.lastBattle.attackerDice} tone="attack" /><GraphicDiceRow values={state.lastBattle.defenderDice} tone="defense" /><small>{state.lastBattle.attackerLosses} perdite attacco · {state.lastBattle.defenderLosses} difesa</small></div>}
+          <div className="under-board-grid"><ObjectiveCard state={state} player={me} /><ActivityLog state={state} /></div>
         </section>
         <aside className="control-column">
           <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} setupAmount={setupAmount} setSetupAmount={setSetupAmount} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />

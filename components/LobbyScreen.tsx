@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import Brand from "@/components/Brand";
+import SoundControl from "@/components/SoundControl";
 import type { GameAction, RoomEnvelope } from "@/lib/game-types";
 
 export default function LobbyScreen({
@@ -33,7 +34,7 @@ export default function LobbyScreen({
 
   return (
     <main className="lobby-shell">
-      <header className="game-topbar lobby-topbar"><Brand compact /><button className="ghost-button" onClick={onLeave}>Torna al menu</button></header>
+      <header className="game-topbar lobby-topbar"><Brand compact /><div className="topbar-actions"><SoundControl /><button className="ghost-button" onClick={onLeave}>Torna al menu</button></div></header>
       <div className="lobby-layout">
         <section className="lobby-main">
           <span className="eyebrow"><i /> Sala privata pronta</span>
@@ -58,12 +59,12 @@ export default function LobbyScreen({
         <aside className="lobby-settings">
           <div className="panel-heading"><span>Regole della campagna</span><small>{isHost ? "Puoi modificarle" : "Scelte da chi ospita"}</small></div>
           <label className="setting-row"><span><b>Giocatori</b><small>Da 2 a 6 strateghi</small></span><select disabled={!isHost} value={state.settings.maxPlayers} onChange={(event) => update("maxPlayers", Number(event.target.value))}>{[2, 3, 4, 5, 6].map((number) => <option key={number} value={number}>{number}</option>)}</select></label>
-          <label className="setting-row"><span><b>Condizione di vittoria</b><small>Missioni private o conquista totale</small></span><select disabled={!isHost} value={state.settings.mode} onChange={(event) => update("mode", event.target.value)}><option value="missioni">Missioni segrete</option><option value="dominio">Dominio totale</option></select></label>
+          <div className="setting-row fixed"><span><b>Obiettivo Challenge</b><small>Una delle 16 carte grafiche da 86 punti</small></span><span className="status-pill">UFFICIALE</span></div>
           <label className="setting-row"><span><b>Time attack</b><small>Vittoria ai punti allo scadere</small></span><select disabled={!isHost} value={state.settings.timeLimitMinutes} onChange={(event) => update("timeLimitMinutes", Number(event.target.value))}><option value={0}>Disattivato</option><option value={45}>45 minuti</option><option value={60}>60 minuti</option><option value={90}>90 minuti</option></select></label>
           <div className="setting-row fixed"><span><b>Difesa a tre dadi</b><small>Il pareggio favorisce la difesa</small></span><span className="status-pill">ATTIVA</span></div>
           {state.settings.maxPlayers === 2 && <p className="info-note">Duello con 14 territori neutrali presidiati da 2 armate.</p>}
           {isHost ? (
-            <button className="primary-button full-button" disabled={busy || state.players.length < 2} onClick={() => action({ type: "startGame" })}>{state.players.length < 2 ? "Attendi almeno un avversario" : "Distribuisci territori e obiettivi"}</button>
+            <button className="primary-button full-button" disabled={busy || state.players.length < 2} onClick={() => action({ type: "startGame" })}>{state.players.length < 2 ? "Attendi almeno un avversario" : "Distribuisci territori e carte Challenge"}</button>
           ) : <div className="waiting-host"><span className="pulse-dot" /> In attesa che inizi la partita…</div>}
         </aside>
       </div>

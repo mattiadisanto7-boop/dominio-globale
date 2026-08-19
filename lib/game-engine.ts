@@ -3,16 +3,15 @@ import {
   PLAYER_COLORS,
   TERRITORIES,
   TERRITORY_BY_ID,
-  type CardSymbol,
   type ContinentId,
   type TerritoryId,
 } from "@/lib/game-data";
+import { TOURNAMENT_OBJECTIVES } from "@/lib/tournament-objectives";
 import type {
   GameAction,
   GamePlayer,
   GameSettings,
   GameState,
-  Objective,
   PublicGameState,
   TerritoryCard,
 } from "@/lib/game-types";
@@ -177,55 +176,7 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
   logItem(state, `${player.name} è entrato nella sala.`);
 };
 
-const objectiveDefinitions = (state: GameState): Objective[] => {
-  const objectives: Objective[] = [
-    {
-      id: "territories-24",
-      title: "Grande espansione",
-      description: "Conquista almeno 24 territori.",
-    },
-    {
-      id: "strong-18",
-      title: "Rete fortificata",
-      description: "Controlla almeno 18 territori con almeno 2 armate ciascuno.",
-    },
-    {
-      id: "north-america-africa",
-      title: "Rotta atlantica",
-      description: "Conquista interamente Nord America e Africa.",
-    },
-    {
-      id: "north-america-oceania",
-      title: "Dominio degli oceani",
-      description: "Conquista interamente Nord America e Oceania.",
-    },
-    {
-      id: "asia-south-america",
-      title: "Due estremi",
-      description: "Conquista interamente Asia e Sud America.",
-    },
-    {
-      id: "europe-south-america-third",
-      title: "Triplice alleanza",
-      description: "Conquista Europa, Sud America e un terzo continente a scelta.",
-    },
-  ];
-
-  if (state.players.length >= 3) {
-    state.players.forEach((player, index) => {
-      const target = state.players[(index + 1) % state.players.length];
-      objectives.push({
-        id: `eliminate-${target.id}`,
-        title: "Operazione annientamento",
-        description: `Elimina completamente l'armata di ${target.name}.`,
-        targetPlayerId: target.id,
-        fallback: "Se l'obiettivo non è più possibile, conquista 24 territori.",
-      });
-    });
-  }
-
-  return shuffle(objectives);
-};
+const objectiveDefinitions = () => shuffle(TOURNAMENT_OBJECTIVES.map((objective) => structuredClone(objective)));
 
 const initializeGame = (state: GameState) => {
   const players = state.players.filter((player) => player.status === "active");
@@ -252,6 +203,7 @@ const initializeGame = (state: GameState) => {
   state.lastBattle = undefined;
   state.winnerId = undefined;
   state.victoryReason = undefined;
+  state.settings.mode = "missioni";
 
   players.forEach((player) => {
     player.status = "active";
@@ -284,25 +236,11 @@ const initializeGame = (state: GameState) => {
     player.setupPool = initialArmies - ownedTerritories(state, player.id).length;
   });
 
-  if (state.settings.mode === "dominio") {
-    players.forEach((player) => {
-      player.objective = {
-        id: "world-domination",
-        title: "Dominio globale",
-        description: "Conquista tutti i 42 territori della mappa.",
-      };
-    });
-  } else {
-    const objectives = objectiveDefinitions(state);
-    players.forEach((player, index) => {
-      const candidate = objectives[index % objectives.length];
-      player.objective =
-        candidate.targetPlayerId === player.id
-          ? objectives.find((objective) => !objective.targetPlayerId) ?? candidate
-          : candidate;
-    });
-  }
-  logItem(state, "I territori e gli obiettivi segreti sono stati assegnati.", "turn");
+  const objectives = objectiveDefinitions();
+  players.forEach((player, index) => {
+    player.objective = objectives[index];
+  });
+  logItem(state, "I territori e le carte obiettivo Challenge da 86 punti sono stati assegnati.", "turn");
 };
 
 const allSetupComplete = (state: GameState) =>
@@ -340,12 +278,9 @@ const tradeValue = (cards: TerritoryCard[]) => {
   if (wilds === 0) {
     const unique = new Set(symbols);
     if (unique.size === 3) return 10;
-    if (unique.size === 1) {
-      const symbol = symbols[0] as Exclude<CardSymbol, "jolly">;
-      return { fanteria: 4, cavalleria: 6, artiglieria: 8 }[symbol];
-    }
+    if (unique.size === 1) return 8;
   }
-  if (wilds === 1 && new Set(symbols).size === 2) return 10;
+  if (wilds === 1 && symbols.length === 2 && new Set(symbols).size === 1) return 12;
   return 0;
 };
 
@@ -384,40 +319,9 @@ const isConnectedThroughOwned = (
 };
 
 const objectiveMet = (state: GameState, player: GamePlayer) => {
-  const owned = ownedTerritories(state, player.id);
   const objective = player.objective;
   if (!objective) return false;
-  switch (objective.id) {
-    case "world-domination":
-      return owned.length === TERRITORIES.length;
-    case "territories-24":
-      return owned.length >= 24;
-    case "strong-18":
-      return owned.filter((territory) => state.territories[territory.id].armies >= 2).length >= 18;
-    case "north-america-africa":
-      return ownsContinent(state, player.id, "north-america") && ownsContinent(state, player.id, "africa");
-    case "north-america-oceania":
-      return ownsContinent(state, player.id, "north-america") && ownsContinent(state, player.id, "oceania");
-    case "asia-south-america":
-      return ownsContinent(state, player.id, "asia") && ownsContinent(state, player.id, "south-america");
-    case "europe-south-america-third": {
-      const ownedContinents = (Object.keys(CONTINENTS) as ContinentId[]).filter((continent) =>
-        ownsContinent(state, player.id, continent),
-      );
-      return (
-        ownedContinents.includes("europe") &&
-        ownedContinents.includes("south-america") &&
-        ownedContinents.length >= 3
-      );
-    }
-    default:
-      if (objective.id.startsWith("eliminate-") && objective.targetPlayerId) {
-        const target = state.players.find((item) => item.id === objective.targetPlayerId);
-        if (target?.status === "eliminated" && target.eliminatedBy === player.id) return true;
-        if (target?.status !== "active" && target?.eliminatedBy !== player.id) return owned.length >= 24;
-      }
-      return false;
-  }
+  return objective.territoryIds.every((territoryId) => state.territories[territoryId].ownerId === player.id);
 };
 
 const finishGame = (state: GameState, winnerId: string, reason: string) => {
@@ -542,16 +446,15 @@ const claimTimeVictory = (state: GameState) => {
   const ranked = state.players
     .filter((player) => player.status === "active")
     .map((player) => {
-      const territories = ownedTerritories(state, player.id);
-      const continents = (Object.keys(CONTINENTS) as ContinentId[]).filter((continent) =>
-        ownsContinent(state, player.id, continent),
-      );
-      const armies = territories.reduce((sum, territory) => sum + state.territories[territory.id].armies, 0);
-      const score = territories.length * 10 + continents.reduce((sum, id) => sum + CONTINENTS[id].bonus * 8, 0) + armies;
-      return { player, score, territories: territories.length, armies };
+      const targetIds = player.objective?.territoryIds ?? [];
+      const secured = targetIds.filter((territoryId) => state.territories[territoryId].ownerId === player.id);
+      const score = secured.reduce((sum, territoryId) => sum + TERRITORY_BY_ID[territoryId].value, 0);
+      const armies = secured.reduce((sum, territoryId) => sum + state.territories[territoryId].armies, 0);
+      const territories = ownedTerritories(state, player.id).length;
+      return { player, score, secured: secured.length, territories, armies };
     })
-    .sort((a, b) => b.score - a.score || b.territories - a.territories || b.armies - a.armies);
-  finishGame(state, ranked[0].player.id, `miglior dominio allo scadere del tempo (${ranked[0].score} punti).`);
+    .sort((a, b) => b.score - a.score || b.secured - a.secured || b.armies - a.armies || b.territories - a.territories);
+  finishGame(state, ranked[0].player.id, `miglior avanzamento sull'obiettivo allo scadere (${ranked[0].score}/86 punti).`);
 };
 
 export const applyGameAction = (original: GameState, playerId: string, action: GameAction): GameState => {
@@ -573,7 +476,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule([2, 3, 4, 5, 6].includes(next.maxPlayers), "Numero di giocatori non valido.");
     assertRule(next.maxPlayers >= state.players.length, "Il limite è inferiore ai giocatori presenti.");
     assertRule([0, 45, 60, 90].includes(next.timeLimitMinutes), "Durata non valida.");
-    assertRule(["missioni", "dominio"].includes(next.mode), "Modalità non valida.");
+    next.mode = "missioni";
     state.settings = next;
     logItem(state, `${actor.name} ha aggiornato le regole della sala.`);
     return state;
