@@ -154,5 +154,5 @@ export default function ActionPanel({
   );
 
   const winner = state.players.find((player) => player.id === state.winnerId);
-  return <section className="action-panel victory-panel"><div className="victory-laurel">✦</div><div className="action-kicker">CAMPAGNA CONCLUSA</div><h2>{winner?.name} domina il mondo</h2><p>{state.victoryReason}</p>{state.hostId === meId && <button className="primary-button full-button" disabled={busy} onClick={() => action({ type: "rematch" })}>Inizia una rivincita</button>}</section>;
+  return <section className="action-panel victory-panel"><div className="victory-laurel">✦</div><div className="action-kicker">CAMPAGNA CONCLUSA</div><h2>{winner ? `${winner.name} domina il mondo` : "Partita chiusa"}</h2><p>{state.victoryReason}</p>{winner && state.hostId === meId && <button className="primary-button full-button" disabled={busy} onClick={() => action({ type: "rematch" })}>Inizia una rivincita</button>}</section>;
 }

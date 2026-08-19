@@ -1,8 +1,9 @@
-import { addLobbyPlayer, applyGameAction, GameRuleError, sanitizeState } from "@/lib/game-engine";
+import { addLobbyPlayer, applyGameAction, GameRuleError, removeLobbyPlayer, sanitizeState } from "@/lib/game-engine";
 import {
   authenticateProfile,
   authenticateRoomMember,
   createSecretToken,
+  deleteGame,
   deleteRoomPlayer,
   findRoomMemberByProfile,
   getActiveSpectatorCount,
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
   const code = cleanCode((await context.params).code);
   try {
     const payload = (await request.json()) as {
-      intent?: "join" | "spectate" | "action";
+      intent?: "join" | "spectate" | "leave" | "action";
       name?: string;
       version?: number;
       action?: GameAction;
@@ -138,10 +139,23 @@ export async function POST(request: Request, context: { params: Promise<{ code: 
     if (!stored.state.players.some((player) => player.id === playerId)) {
       return Response.json({ error: "Non fai più parte di questa sala." }, { status: 403 });
     }
+    if (payload.intent === "leave") {
+      if (payload.version !== stored.version) throw new StoreConflictError();
+      const next = removeLobbyPlayer(stored.state, playerId);
+      if (!next.players.some((player) => !player.isBot)) {
+        await deleteGame(code, stored.version);
+      } else {
+        await saveGame(code, stored.version, next, [playerId]);
+      }
+      return Response.json({ success: true, left: true });
+    }
     if (!payload.action) return Response.json({ error: "Azione mancante." }, { status: 400 });
     if (payload.version !== stored.version) throw new StoreConflictError();
     const next = applyGameAction(stored.state, playerId, payload.action);
-    const version = await saveGame(code, stored.version, next);
+    const removedRoomPlayerIds = payload.action.type === "kickPlayer"
+      ? [payload.action.playerId]
+      : payload.action.type === "resign" ? [playerId] : [];
+    const version = await saveGame(code, stored.version, next, removedRoomPlayerIds);
     if (next.phase === "gameover") await recordCompletedGame(next);
     return Response.json({
       version,

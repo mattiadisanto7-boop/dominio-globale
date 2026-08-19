@@ -11,6 +11,7 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 - registrazione con nickname unico e password, sessione persistente sul browser e profilo personale;
 - lobby globale con giocatori online, stanze pubbliche visibili in home e ingresso con un solo clic, più stanze private protette dal codice di sei caratteri;
 - modalità spettatore per le partite pubbliche già iniziate, con aggiornamento live e filtraggio server-side di carte, pescate e obiettivi personali;
+- richieste d'amicizia complete: invio dalla lista online o dalla classifica, accettazione, rifiuto, annullamento e rimozione;
 - classifica generale con rating, partite, vittorie, percentuale, conquiste, armate eliminate e miglior punteggio obiettivo;
 - sincronizzazione online, riconnessione e salvataggio persistente;
 - tabellone vettoriale realistico con 42 territori cliccabili, rotte marittime e pedine a forma di carro armato colorato con conteggio delle armate;
@@ -26,6 +27,7 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
 - modalità principale Challenge da 90 minuti, con timer avviato soltanto dopo l'ultimo piazzamento iniziale: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
 - riempimento dei posti liberi con bot strategici che schierano, rinforzano, attaccano, conquistano, spostano e pescano carte usando lo stesso motore di regole dei giocatori;
+- uscita effettiva dalla lobby con liberazione immediata del posto e trasferimento automatico dell'host; durante una partita chi abbandona viene sostituito da un bot che eredita eserciti, carte e obiettivo, mentre la sala si chiude senza vincitore quando non resta nessun umano;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
 
 Il progetto usa **Next.js**, **React** e **PostgreSQL**. Nome, grafica e codice sono originali e non rappresentano un prodotto ufficiale RisiKo!.

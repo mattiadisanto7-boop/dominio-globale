@@ -4,6 +4,8 @@ import { Pool, type PoolClient } from "pg";
 import { TERRITORY_BY_ID } from "@/lib/game-data";
 import type {
   CommunitySnapshot,
+  FriendActionIntent,
+  FriendsSnapshot,
   OnlineProfile,
   PublicProfile,
   PublicRoomSummary,
@@ -14,6 +16,13 @@ export class StoreConflictError extends Error {
   constructor() {
     super("La partita è cambiata su un altro dispositivo. Aggiorno la situazione.");
     this.name = "StoreConflictError";
+  }
+}
+
+export class FriendshipRuleError extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+    this.name = "FriendshipRuleError";
   }
 }
 
@@ -103,6 +112,22 @@ const ensureDatabase = async () => {
 
         CREATE INDEX IF NOT EXISTS profile_sessions_profile_idx
           ON profile_sessions (profile_id);
+
+        CREATE TABLE IF NOT EXISTS friendships (
+          profile_a TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+          profile_b TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+          requested_by TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          PRIMARY KEY (profile_a, profile_b),
+          CHECK (profile_a < profile_b),
+          CHECK (requested_by = profile_a OR requested_by = profile_b),
+          CHECK (status IN ('pending', 'accepted'))
+        );
+
+        CREATE INDEX IF NOT EXISTS friendships_profile_b_idx
+          ON friendships (profile_b, status);
 
         CREATE TABLE IF NOT EXISTS room_players (
           id TEXT PRIMARY KEY,
@@ -220,6 +245,12 @@ const profileColumns = `
   best_objective_score
 `;
 
+const qualifiedProfileColumns = `
+  p.id, p.nickname, p.created_at, p.rating, p.games_played, p.wins, p.losses,
+  p.total_attacks, p.territories_conquered, p.armies_defeated, p.sets_traded,
+  p.best_objective_score
+`;
+
 export const createProfile = async (nickname: string, password: string) => {
   await ensureDatabase();
   const id = `profile_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`;
@@ -311,6 +342,102 @@ export const logoutProfile = async (token: string) => {
   await ensureDatabase();
   if (!token) return;
   await database().query("DELETE FROM profile_sessions WHERE token_hash = $1", [await hashToken(token)]);
+};
+
+type FriendshipProfileRow = ProfileRow & {
+  requested_by: string;
+  friendship_status: "pending" | "accepted";
+};
+
+export const getFriendsSnapshot = async (profileId: string): Promise<FriendsSnapshot> => {
+  await ensureDatabase();
+  const result = await database().query<FriendshipProfileRow>(
+    `SELECT ${qualifiedProfileColumns},
+            f.requested_by,
+            f.status AS friendship_status
+       FROM friendships f
+       JOIN profiles p
+         ON p.id = CASE WHEN f.profile_a = $1 THEN f.profile_b ELSE f.profile_a END
+      WHERE f.profile_a = $1 OR f.profile_b = $1
+      ORDER BY CASE WHEN f.status = 'pending' AND f.requested_by <> $1 THEN 0
+                    WHEN f.status = 'accepted' THEN 1 ELSE 2 END,
+               f.updated_at DESC`,
+    [profileId],
+  );
+  const snapshot: FriendsSnapshot = { friends: [], incoming: [], outgoing: [] };
+  result.rows.forEach((row) => {
+    const profile = toPublicProfile(row);
+    if (row.friendship_status === "accepted") snapshot.friends.push(profile);
+    else if (row.requested_by === profileId) snapshot.outgoing.push(profile);
+    else snapshot.incoming.push(profile);
+  });
+  return snapshot;
+};
+
+export const updateFriendship = async (
+  profileId: string,
+  targetProfileId: string,
+  intent: FriendActionIntent,
+) => {
+  await ensureDatabase();
+  if (profileId === targetProfileId) throw new FriendshipRuleError("Non puoi inviare una richiesta a te stesso.");
+  const [profileA, profileB] = [profileId, targetProfileId].sort();
+  await inTransaction(async (client) => {
+    const target = await client.query("SELECT 1 FROM profiles WHERE id = $1", [targetProfileId]);
+    if (!target.rowCount) throw new FriendshipRuleError("Giocatore non trovato.", 404);
+    const existing = await client.query<{ status: "pending" | "accepted"; requested_by: string }>(
+      `SELECT status, requested_by
+         FROM friendships
+        WHERE profile_a = $1 AND profile_b = $2
+        FOR UPDATE`,
+      [profileA, profileB],
+    );
+    const relation = existing.rows[0];
+    const now = Date.now();
+
+    if (intent === "request") {
+      if (!relation) {
+        await client.query(
+          `INSERT INTO friendships
+            (profile_a, profile_b, requested_by, status, created_at, updated_at)
+           VALUES ($1, $2, $3, 'pending', $4, $4)`,
+          [profileA, profileB, profileId, now],
+        );
+        return;
+      }
+      if (relation.status === "accepted") throw new FriendshipRuleError("Siete già amici.", 409);
+      if (relation.requested_by === profileId) throw new FriendshipRuleError("Richiesta già inviata.", 409);
+      await client.query(
+        `UPDATE friendships SET status = 'accepted', updated_at = $3
+          WHERE profile_a = $1 AND profile_b = $2`,
+        [profileA, profileB, now],
+      );
+      return;
+    }
+
+    if (!relation) throw new FriendshipRuleError("Richiesta di amicizia non trovata.", 404);
+    if (intent === "accept") {
+      if (relation.status !== "pending" || relation.requested_by === profileId) {
+        throw new FriendshipRuleError("Questa richiesta non può essere accettata.", 409);
+      }
+      await client.query(
+        `UPDATE friendships SET status = 'accepted', updated_at = $3
+          WHERE profile_a = $1 AND profile_b = $2`,
+        [profileA, profileB, now],
+      );
+      return;
+    }
+    const mayDelete = intent === "reject"
+      ? relation.status === "pending" && relation.requested_by !== profileId
+      : intent === "cancel"
+        ? relation.status === "pending" && relation.requested_by === profileId
+        : intent === "remove" && relation.status === "accepted";
+    if (!mayDelete) throw new FriendshipRuleError("Operazione di amicizia non valida.", 409);
+    await client.query(
+      "DELETE FROM friendships WHERE profile_a = $1 AND profile_b = $2",
+      [profileA, profileB],
+    );
+  });
 };
 
 export const readGame = async (code: string): Promise<StoredGame | null> => {
@@ -433,8 +560,44 @@ export const deleteRoomPlayer = async (playerId: string) => {
   await database().query("DELETE FROM room_players WHERE id = $1", [playerId]);
 };
 
-export const saveGame = async (code: string, expectedVersion: number, state: GameState) => {
+export const deleteGame = async (code: string, expectedVersion: number) => {
   await ensureDatabase();
+  const result = await database().query(
+    "DELETE FROM games WHERE code = $1 AND version = $2 RETURNING code",
+    [code, expectedVersion],
+  );
+  if (!result.rowCount) throw new StoreConflictError();
+};
+
+export const saveGame = async (
+  code: string,
+  expectedVersion: number,
+  state: GameState,
+  removedRoomPlayerIds: string[] = [],
+) => {
+  await ensureDatabase();
+  if (removedRoomPlayerIds.length) {
+    return inTransaction(async (client) => {
+      const result = await client.query<{ version: number }>(
+        `UPDATE games
+           SET state = $1::jsonb,
+               status = $2,
+               host_player_id = $3,
+               version = version + 1,
+               updated_at = $4
+         WHERE code = $5 AND version = $6
+         RETURNING version`,
+        [JSON.stringify(state), state.phase, state.hostId, Date.now(), code, expectedVersion],
+      );
+      const row = result.rows[0];
+      if (!row) throw new StoreConflictError();
+      await client.query(
+        "DELETE FROM room_players WHERE game_code = $1 AND id = ANY($2::text[])",
+        [code, removedRoomPlayerIds],
+      );
+      return row.version;
+    });
+  }
   const result = await database().query<{ version: number }>(
     `UPDATE games
        SET state = $1::jsonb,
@@ -545,17 +708,19 @@ export const getCommunitySnapshot = async (): Promise<CommunitySnapshot> => {
 export const recordCompletedGame = async (state: GameState) => {
   if (state.phase !== "gameover" || !state.winnerId) return;
   await ensureDatabase();
-  const players = state.players.filter((player) => !player.isBot && player.profileId);
+  const players = state.players.filter((player) => player.profileId || player.abandonedProfileId);
   if (!players.length) return;
   const matchId = state.matchId ?? `legacy_${state.startedAt ?? state.createdAt}`;
-  const winnerIsHuman = players.some((player) => player.id === state.winnerId);
+  const winnerIsHuman = players.some((player) => player.id === state.winnerId && !player.abandoned);
   const winDelta = 32 + Math.max(0, players.length - 2) * 4;
   const lossDelta = -Math.max(8, Math.floor(winDelta / Math.max(1, players.length - 1)));
   const now = Date.now();
 
   await inTransaction(async (client) => {
     for (const player of players) {
-      const won = player.id === state.winnerId;
+      const profileId = player.profileId ?? player.abandonedProfileId;
+      if (!profileId) continue;
+      const won = player.id === state.winnerId && !player.abandoned;
       const objectiveScore = (player.objective?.territoryIds ?? [])
         .filter((territoryId) => state.territories[territoryId].ownerId === player.id)
         .reduce((sum, territoryId) => sum + TERRITORY_BY_ID[territoryId].value, 0);
@@ -566,7 +731,7 @@ export const recordCompletedGame = async (state: GameState) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT DO NOTHING
          RETURNING profile_id`,
-        [state.code, matchId, player.profileId, won, objectiveScore, ratingDelta, now],
+        [state.code, matchId, profileId, won, objectiveScore, ratingDelta, now],
       );
       if (!inserted.rowCount) continue;
       await client.query(
@@ -590,7 +755,7 @@ export const recordCompletedGame = async (state: GameState) => {
           player.stats.armiesDefeated,
           player.stats.setsTraded,
           objectiveScore,
-          player.profileId,
+          profileId,
         ],
       );
     }

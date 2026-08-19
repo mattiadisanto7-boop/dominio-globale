@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommunitySnapshot, PublicRoomSummary } from "@/lib/community-types";
+import type { CommunitySnapshot, FriendActionIntent, FriendsSnapshot, PublicRoomSummary } from "@/lib/community-types";
 
 const PHASE_LABELS: Record<PublicRoomSummary["phase"], string> = {
   lobby: "In attesa",
@@ -22,6 +22,10 @@ export default function CommunityHub({
   loading,
   profileId,
   busyCode,
+  friends,
+  friendBusy,
+  friendError,
+  onFriendAction,
   onJoin,
   onSpectate,
 }: {
@@ -29,6 +33,10 @@ export default function CommunityHub({
   loading: boolean;
   profileId?: string;
   busyCode?: string;
+  friends?: FriendsSnapshot;
+  friendBusy?: string;
+  friendError?: string;
+  onFriendAction: (profileId: string, intent: FriendActionIntent) => void;
   onJoin: (code: string) => void;
   onSpectate: (code: string) => void;
 }) {
@@ -36,11 +44,22 @@ export default function CommunityHub({
   const online = snapshot?.online ?? [];
   const leaderboard = snapshot?.leaderboard ?? [];
   const myRank = profileId ? leaderboard.findIndex((profile) => profile.id === profileId) : -1;
+  const friendIds = new Set(friends?.friends.map((profile) => profile.id) ?? []);
+  const incomingIds = new Set(friends?.incoming.map((profile) => profile.id) ?? []);
+  const outgoingIds = new Set(friends?.outgoing.map((profile) => profile.id) ?? []);
+
+  const friendControl = (targetId: string) => {
+    if (!profileId || targetId === profileId) return null;
+    if (friendIds.has(targetId)) return <span className="friend-status accepted">✓ Amico</span>;
+    if (outgoingIds.has(targetId)) return <span className="friend-status pending">Richiesta inviata</span>;
+    if (incomingIds.has(targetId)) return <button className="friend-action accept" disabled={friendBusy === targetId} onClick={() => onFriendAction(targetId, "accept")}>{friendBusy === targetId ? "…" : "Accetta"}</button>;
+    return <button className="friend-action" disabled={friendBusy === targetId} onClick={() => onFriendAction(targetId, "request")}>{friendBusy === targetId ? "…" : "+ Amico"}</button>;
+  };
 
   return (
     <section className="community-section" aria-label="Community online">
       <div className="community-heading">
-        <div><span className="eyebrow"><i /> SERVER GLOBALE</span><h2>La sala di comando è viva.</h2><p>Entra in una stanza pubblica senza codice, osserva le battaglie in corso o scala la classifica generale.</p></div>
+        <div><span className="eyebrow"><i /> SERVER GLOBALE</span><h2>La sala di comando è viva.</h2><p>Entra in una stanza pubblica senza codice, osserva le battaglie, crea la tua rete di amici o scala la classifica generale.</p></div>
         <div className="online-total"><i /><b>{online.length}</b><span>giocatori<br />online ora</span></div>
       </div>
       <div className="community-grid">
@@ -74,26 +93,40 @@ export default function CommunityHub({
           {!profileId && <p className="community-auth-note">Registrati o accedi per entrare e guardare le partite.</p>}
         </section>
 
-        <aside className="online-panel">
-          <header><span>GIOCATORI ONLINE</span><b>{online.length}</b></header>
-          <div>
-            {online.slice(0, 14).map((player) => (
-              <article key={player.id} className={player.id === profileId ? "me" : ""}>
-                <span className="online-avatar">{player.nickname.slice(0, 1).toUpperCase()}<i /></span>
-                <div><b>{player.nickname}{player.id === profileId ? " · tu" : ""}</b><small>{PRESENCE_LABELS[player.presence]}</small></div>
-                <em>{player.rating}</em>
-              </article>
-            ))}
-            {!online.length && <div className="online-empty">Il prossimo comandante online potresti essere tu.</div>}
-          </div>
-        </aside>
+        <div className="community-side-stack">
+          <aside className="online-panel">
+            <header><span>GIOCATORI ONLINE</span><b>{online.length}</b></header>
+            <div>
+              {online.slice(0, 14).map((player) => (
+                <article key={player.id} className={player.id === profileId ? "me" : ""}>
+                  <span className="online-avatar">{player.nickname.slice(0, 1).toUpperCase()}<i /></span>
+                  <div><b>{player.nickname}{player.id === profileId ? " · tu" : ""}</b><small>{PRESENCE_LABELS[player.presence]}</small></div>
+                  <span className="online-actions"><em>{player.rating}</em>{friendControl(player.id)}</span>
+                </article>
+              ))}
+              {!online.length && <div className="online-empty">Il prossimo comandante online potresti essere tu.</div>}
+            </div>
+          </aside>
+
+          {profileId && <aside className="friends-panel">
+            <header><span>RETE ALLEATI</span><b className={friends?.incoming.length ? "has-requests" : ""}>{friends?.incoming.length ? `${friends.incoming.length} nuove` : friends?.friends.length ?? 0}</b></header>
+            <div className="friends-list">
+              {friends?.incoming.map((player) => <article key={`in-${player.id}`} className="friend-request-row"><span className="friend-avatar">{player.nickname.slice(0, 1).toUpperCase()}</span><div><b>{player.nickname}</b><small>Vuole diventare tuo amico</small></div><span className="friend-row-actions"><button disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "accept")}>✓</button><button className="reject" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "reject")}>×</button></span></article>)}
+              {friends?.friends.map((player) => <article key={`friend-${player.id}`}><span className="friend-avatar allied">✓</span><div><b>{player.nickname}</b><small>{player.rating} rating · alleato</small></div><button className="friend-remove" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "remove")}>Rimuovi</button></article>)}
+              {friends?.outgoing.map((player) => <article key={`out-${player.id}`}><span className="friend-avatar pending">⌛</span><div><b>{player.nickname}</b><small>Richiesta in attesa</small></div><button className="friend-remove" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "cancel")}>Annulla</button></article>)}
+              {friends && !friends.incoming.length && !friends.friends.length && !friends.outgoing.length && <div className="friends-empty"><span>♙</span><b>Crea la tua alleanza</b><small>Invia una richiesta dai giocatori online o dalla classifica.</small></div>}
+              {!friends && <div className="friends-empty"><i /><small>Sincronizzazione alleati…</small></div>}
+            </div>
+            {friendError && <p className="friend-error" role="alert">{friendError}</p>}
+          </aside>}
+        </div>
       </div>
 
       <section className="leaderboard-panel">
         <header><div><span>CLASSIFICA GLOBALE</span><small>Rating, vittorie e statistiche di tutte le campagne registrate</small></div>{myRank >= 0 && <b>LA TUA POSIZIONE · #{myRank + 1}</b>}</header>
         <div className="leaderboard-scroll">
           <table>
-            <thead><tr><th>#</th><th>Comandante</th><th>Rating</th><th>Partite</th><th>Vittorie</th><th>% vittorie</th><th>Conquiste</th><th>Armate eliminate</th><th>Miglior obiettivo</th></tr></thead>
+            <thead><tr><th>#</th><th>Comandante</th><th>Rating</th><th>Partite</th><th>Vittorie</th><th>% vittorie</th><th>Conquiste</th><th>Armate eliminate</th><th>Miglior obiettivo</th><th>Relazione</th></tr></thead>
             <tbody>
               {leaderboard.slice(0, 20).map((player, index) => (
                 <tr key={player.id} className={player.id === profileId ? "me" : ""}>
@@ -106,9 +139,10 @@ export default function CommunityHub({
                   <td>{player.territoriesConquered}</td>
                   <td>{player.armiesDefeated}</td>
                   <td>{player.bestObjectiveScore}/86</td>
+                  <td>{friendControl(player.id)}</td>
                 </tr>
               ))}
-              {!leaderboard.length && <tr><td colSpan={9} className="leaderboard-empty">La prima partita classificata inaugurerà la graduatoria.</td></tr>}
+              {!leaderboard.length && <tr><td colSpan={10} className="leaderboard-empty">La prima partita classificata inaugurerà la graduatoria.</td></tr>}
             </tbody>
           </table>
         </div>

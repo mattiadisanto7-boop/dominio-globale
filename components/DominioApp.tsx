@@ -65,7 +65,8 @@ export default function DominioApp() {
     return () => { cancelled = true; };
   }, [roomCode, token]);
 
-  const leave = () => {
+  const leave = (forgetToken = false) => {
+    if (forgetToken && roomCode) localStorage.removeItem(`${TOKEN_PREFIX}${roomCode}`);
     const url = new URL(window.location.href); url.searchParams.delete("stanza"); window.history.replaceState({}, "", url);
     setRoomCode(""); setToken(""); setEnvelope(undefined); setFatalError("");
   };
@@ -90,7 +91,7 @@ export default function DominioApp() {
   };
 
   if (initializing || (roomCode && token && !envelope && !fatalError)) return <LoadingRoom />;
-  if (fatalError) return <main className="loading-screen error-screen"><Brand /><h1>Non riesco ad aprire la sala</h1><p>{fatalError}</p><button className="primary-button" onClick={() => { localStorage.removeItem(`${TOKEN_PREFIX}${roomCode}`); setToken(""); setFatalError(""); }}>Entra di nuovo con il codice</button><button className="text-button" onClick={leave}>Torna al menu</button></main>;
+  if (fatalError) return <main className="loading-screen error-screen"><Brand /><h1>Non riesco ad aprire la sala</h1><p>{fatalError}</p><button className="primary-button" onClick={() => { localStorage.removeItem(`${TOKEN_PREFIX}${roomCode}`); setToken(""); setFatalError(""); }}>Entra di nuovo con il codice</button><button className="text-button" onClick={() => leave()}>Torna al menu</button></main>;
   if (roomCode && !token) return <HomeScreen initialCode={roomCode} onEnter={enterRoom} accountToken={accountToken} profile={profile} onAuthenticate={authenticate} onLogout={logout} />;
   if (envelope && token) return <GameRoom envelope={envelope} onEnvelope={setEnvelope} token={token} onLeave={leave} />;
   return <HomeScreen initialCode="" onEnter={enterRoom} accountToken={accountToken} profile={profile} onAuthenticate={authenticate} onLogout={logout} />;

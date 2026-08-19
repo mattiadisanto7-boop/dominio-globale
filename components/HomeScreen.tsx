@@ -5,7 +5,7 @@ import BoardPreview from "@/components/BoardPreview";
 import Brand from "@/components/Brand";
 import CommunityHub from "@/components/CommunityHub";
 import SoundControl from "@/components/SoundControl";
-import type { AccountEnvelope, CommunitySnapshot, PublicProfile } from "@/lib/community-types";
+import type { AccountEnvelope, CommunitySnapshot, FriendActionIntent, FriendsSnapshot, PublicProfile } from "@/lib/community-types";
 
 const cleanCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
 
@@ -21,7 +21,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia i dadi massimi; da 2 armate non puoi attaccarne 2+, da 3 non puoi attaccarne 3+. I pareggi favoriscono la difesa."],
     ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico. Se la partenza confina con un nemico, devono restarvi almeno 2 armate; l'occupazione minima dopo una conquista applica da sola l'eventuale eccezione."],
     ["05", "Completa la carta", "I territori richiesti usano il tuo colore: pieno se sono già tuoi, chiarissimo se mancano. Il pulsante Carte apre in privato l'intero mazzo che possiedi."],
-    ["06", "Chiudi la campagna", "Puoi riempire i posti liberi con generali bot. La modalità principale dura 90 minuti dopo lo schieramento, poi ultimo giro e sdadata da 4 a 7."],
+    ["06", "Chiudi la campagna", "Puoi riempire i posti liberi con generali bot. Se abbandoni, un bot eredita il tuo esercito; se restano solo bot, la partita si chiude. La modalità principale dura 90 minuti, poi ultimo giro e sdadata."],
   ];
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Regole del gioco">
@@ -74,6 +74,9 @@ export default function HomeScreen({
   const [rulesOpen, setRulesOpen] = useState(false);
   const [community, setCommunity] = useState<CommunitySnapshot>();
   const [communityLoading, setCommunityLoading] = useState(true);
+  const [friends, setFriends] = useState<FriendsSnapshot>();
+  const [friendBusy, setFriendBusy] = useState("");
+  const [friendError, setFriendError] = useState("");
   const displayedProfile = community?.leaderboard.find((item) => item.id === profile?.id) ?? profile;
 
   const loadCommunity = useCallback(async () => {
@@ -88,6 +91,19 @@ export default function HomeScreen({
       // La home resta utilizzabile anche durante una temporanea assenza del server community.
     } finally {
       setCommunityLoading(false);
+    }
+    if (!accountToken) {
+      setFriends(undefined);
+      return;
+    }
+    try {
+      const response = await fetch("/api/friends", {
+        headers: { authorization: `Bearer ${accountToken}` },
+        cache: "no-store",
+      });
+      if (response.ok) setFriends((await response.json()) as FriendsSnapshot);
+    } catch {
+      // Le stanze restano utilizzabili anche se il pannello amicizie è temporaneamente irraggiungibile.
     }
   }, [accountToken]);
 
@@ -159,6 +175,26 @@ export default function HomeScreen({
     }
   };
 
+  const updateFriend = async (targetProfileId: string, intent: FriendActionIntent) => {
+    if (!accountToken || friendBusy) return;
+    setFriendBusy(targetProfileId);
+    setFriendError("");
+    try {
+      const response = await fetch("/api/friends", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${accountToken}` },
+        body: JSON.stringify({ intent, profileId: targetProfileId }),
+      });
+      const payload = (await response.json()) as FriendsSnapshot & { error?: string };
+      if (!response.ok) throw new Error(readError(payload, "Operazione di amicizia non riuscita."));
+      setFriends(payload);
+    } catch (caught) {
+      setFriendError(caught instanceof Error ? caught.message : "Operazione di amicizia non riuscita.");
+    } finally {
+      setFriendBusy("");
+    }
+  };
+
   return (
     <main className="landing-shell">
       <div className="landing-aurora landing-aurora-one" /><div className="landing-aurora landing-aurora-two" />
@@ -208,7 +244,7 @@ export default function HomeScreen({
           </>}
         </div>
       </section>
-      <CommunityHub snapshot={community} loading={communityLoading} profileId={profile?.id} busyCode={busyCode} onJoin={(roomCode) => void enterListedRoom(roomCode, "join")} onSpectate={(roomCode) => void enterListedRoom(roomCode, "spectate")} />
+      <CommunityHub snapshot={community} loading={communityLoading} profileId={profile?.id} busyCode={busyCode} friends={friends} friendBusy={friendBusy} friendError={friendError} onFriendAction={(profileId, intent) => void updateFriend(profileId, intent)} onJoin={(roomCode) => void enterListedRoom(roomCode, "join")} onSpectate={(roomCode) => void enterListedRoom(roomCode, "spectate")} />
       <BoardPreview />
       <footer className="landing-footer"><span>Dominio Globale è un gioco originale di conquista strategica ispirato ai classici del genere.</span><button onClick={() => setRulesOpen(true)}>Come si gioca</button></footer>
       {rulesOpen && <RulesModal onClose={() => setRulesOpen(false)} />}

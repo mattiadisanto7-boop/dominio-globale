@@ -52,10 +52,18 @@ const assertRuleError = (operation, message) => {
 
 const engine = (await loadModule(path.join(root, "lib/game-engine.ts"))).namespace;
 const gameData = (await loadModule(path.join(root, "lib/game-data.ts"))).namespace;
-const { createLobby, addLobbyPlayer, applyGameAction, sanitizeState } = engine;
+const { createLobby, addLobbyPlayer, applyGameAction, removeLobbyPlayer, sanitizeState } = engine;
 const { TERRITORIES, attackDiceForArmies, defenseDiceForArmies } = gameData;
 
 const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 90, defense: "automatic", visibility: "public" };
+let leavingLobby = createLobby("LEAVE1", { id: "host_leave", name: "Host", profileId: "profile_host" }, { ...settings, maxPlayers: 3 });
+addLobbyPlayer(leavingLobby, { id: "guest_leave", name: "Guest", profileId: "profile_guest" });
+addLobbyPlayer(leavingLobby, { id: "next_host", name: "Next", profileId: "profile_next" });
+leavingLobby = removeLobbyPlayer(leavingLobby, "guest_leave");
+assert(!leavingLobby.players.some((player) => player.id === "guest_leave") && leavingLobby.players.length === 2, "Chi esce dalla lobby deve liberare immediatamente il posto.");
+leavingLobby = removeLobbyPlayer(leavingLobby, "host_leave");
+assert(leavingLobby.hostId === "next_host" && leavingLobby.players.length === 1, "Se esce l'host, il comando deve passare al prossimo giocatore umano.");
+
 let state = createLobby("TEST42", { id: "alpha", name: "Alpha", profileId: "profile_alpha" }, settings);
 addLobbyPlayer(state, { id: "bravo", name: "Bravo", profileId: "profile_bravo" });
 state = applyGameAction(state, "alpha", { type: "startGame" });
@@ -233,17 +241,26 @@ const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
 assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
 assert(rematch.matchId !== finished.matchId, "La rivincita deve avere un nuovo identificatore statistico.");
 
-let botGame = createLobby("BOT004", { id: "human_a", name: "Human A" }, {
+let botGame = createLobby("BOT004", { id: "human_a", name: "Human A", profileId: "profile_human_a" }, {
   maxPlayers: 4,
   mode: "missioni",
   timeLimitMinutes: 0,
   defense: "automatic",
 });
-addLobbyPlayer(botGame, { id: "human_b", name: "Human B" });
+addLobbyPlayer(botGame, { id: "human_b", name: "Human B", profileId: "profile_human_b" });
 botGame = applyGameAction(botGame, "human_a", { type: "fillWithBots" });
 assert(botGame.players.length === 4, "Il riempimento deve occupare tutti i posti scelti nella modalità.");
 assert(botGame.players.filter((player) => player.isBot).length === 2, "Una sala da 4 con 2 persone deve ricevere 2 bot.");
 botGame = applyGameAction(botGame, "human_a", { type: "startGame" });
+const humanBTerritories = TERRITORIES.filter((territory) => botGame.territories[territory.id].ownerId === "human_b").length;
+const substitutedGame = applyGameAction(botGame, "human_b", { type: "resign" });
+const replacement = substitutedGame.players.find((player) => player.id === "human_b");
+assert(replacement.isBot && replacement.abandoned && replacement.status === "active", "Chi abbandona deve essere sostituito da un bot attivo.");
+assert(!replacement.profileId && replacement.abandonedProfileId === "profile_human_b", "Il bot sostitutivo non deve poter essere ripreso tramite la vecchia sessione.");
+assert(TERRITORIES.filter((territory) => substitutedGame.territories[territory.id].ownerId === "human_b").length === humanBTerritories, "Il bot sostitutivo deve ereditare territori e armate del giocatore.");
+assert(!("abandonedProfileId" in sanitizeState(substitutedGame, "human_a").players.find((player) => player.id === "human_b")), "L'identificatore del profilo abbandonato deve restare privato.");
+const botsOnlyGame = applyGameAction(substitutedGame, "human_a", { type: "resign" });
+assert(botsOnlyGame.phase === "gameover" && !botsOnlyGame.winnerId, "La partita deve chiudersi senza vincitore quando restano soltanto bot.");
 let botSetupSteps = 0;
 let verifiedSingleBotPlacement = false;
 while (botGame.phase === "setup") {
@@ -282,4 +299,4 @@ for (let step = 0; step < 80 && botGame.phase !== "gameover" && !botCompletedTur
 }
 assert(sawBotTurn && botCompletedTurn, "Il bot deve completare rinforzi, attacchi e fine turno come un giocatore.");
 
-console.log(`OK · ${setupActions} blocchi alternati e divisibili · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · tutte le carte private · 2 bot completi · rivincita`);
+console.log(`OK · uscita lobby e passaggio host · ${setupActions} blocchi alternati · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · privacy · bot sostitutivo e chiusura senza umani · rivincita`);

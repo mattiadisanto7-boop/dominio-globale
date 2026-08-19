@@ -40,7 +40,9 @@ export type GamePlayer = {
   id: string;
   name: string;
   profileId?: string;
+  abandonedProfileId?: string;
   isBot?: boolean;
+  abandoned?: boolean;
   colorId: string;
   color: string;
   status: PlayerStatus;
@@ -173,7 +175,7 @@ export type GameState = {
   victoryReason?: string;
 };
 
-export type PublicPlayer = Omit<GamePlayer, "cards" | "objective" | "profileId"> & {
+export type PublicPlayer = Omit<GamePlayer, "cards" | "objective" | "profileId" | "abandonedProfileId"> & {
   cards: TerritoryCard[];
   cardCount: number;
   objective?: Objective;

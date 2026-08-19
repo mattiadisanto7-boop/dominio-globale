@@ -9,11 +9,13 @@ export default function LobbyScreen({
   envelope,
   action,
   busy,
+  error,
   onLeave,
 }: {
   envelope: RoomEnvelope;
   action: (action: GameAction) => Promise<void>;
   busy: boolean;
+  error?: string;
   onLeave: () => void;
 }) {
   const { state, meId } = envelope;
@@ -35,7 +37,7 @@ export default function LobbyScreen({
 
   return (
     <main className="lobby-shell">
-      <header className="game-topbar lobby-topbar"><Brand compact /><div className="topbar-actions"><SoundControl /><button className="ghost-button" onClick={onLeave}>Torna al menu</button></div></header>
+      <header className="game-topbar lobby-topbar"><Brand compact /><div className="topbar-actions"><SoundControl /><button className="ghost-button" disabled={busy} onClick={onLeave}>{busy ? "Uscita…" : "Esci dalla sala"}</button></div></header>
       <div className="lobby-layout">
         <section className="lobby-main">
           <span className="eyebrow"><i /> Sala {isPublic ? "pubblica" : "privata"} pronta</span>
@@ -61,6 +63,7 @@ export default function LobbyScreen({
               <span>◆</span><b>Riempi {state.settings.maxPlayers - state.players.length} {state.settings.maxPlayers - state.players.length === 1 ? "posto" : "posti"} con i bot</b><small>Giocano turni completi con le stesse regole</small>
             </button>
           )}
+          {error && <p className="form-error lobby-exit-error" role="alert">{error}</p>}
         </section>
         <aside className="lobby-settings">
           <div className="panel-heading"><span>Regole della campagna</span><small>{isHost ? "Puoi modificarle" : "Scelte da chi ospita"}</small></div>

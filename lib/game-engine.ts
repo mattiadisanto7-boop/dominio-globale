@@ -193,6 +193,19 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
   logItem(state, `${player.name} è entrato nella sala.`);
 };
 
+export const removeLobbyPlayer = (original: GameState, playerId: string) => {
+  const state = structuredClone(original);
+  assertRule(state.phase === "lobby", "La partita è già iniziata.");
+  const leaving = playerById(state, playerId);
+  assertRule(!leaving.isBot, "Un bot non può uscire autonomamente dalla sala.");
+  state.players = state.players.filter((player) => player.id !== playerId);
+  if (state.hostId === playerId) {
+    state.hostId = state.players.find((player) => !player.isBot)?.id ?? state.players[0]?.id ?? "";
+  }
+  logItem(state, `${leaving.name} ha lasciato la sala.`);
+  return state;
+};
+
 const fillLobbyWithBots = (state: GameState) => {
   const added: string[] = [];
   while (state.players.length < state.settings.maxPlayers) {
@@ -226,6 +239,13 @@ const fillLobbyWithBots = (state: GameState) => {
 const objectiveDefinitions = () => shuffle(TOURNAMENT_OBJECTIVES.map((objective) => structuredClone(objective)));
 
 const initializeGame = (state: GameState) => {
+  if (state.phase === "gameover") {
+    state.players.forEach((player) => {
+      if (!player.abandoned) return;
+      player.abandoned = undefined;
+      player.abandonedProfileId = undefined;
+    });
+  }
   const players = state.phase === "gameover"
     ? [...state.players]
     : state.players.filter((player) => player.status === "active");
@@ -502,6 +522,16 @@ const finishGame = (state: GameState, winnerId: string, reason: string) => {
   state.pendingMove = undefined;
   playerById(state, winnerId).stats.victories += 1;
   logItem(state, `${playerName(state, winnerId)} vince: ${reason}`, "victory");
+};
+
+const closeGameWithoutHumans = (state: GameState) => {
+  state.phase = "gameover";
+  state.currentPlayerId = undefined;
+  state.winnerId = undefined;
+  state.victoryReason = "Partita chiusa: non è rimasto nessun giocatore umano.";
+  state.pendingBattle = undefined;
+  state.pendingMove = undefined;
+  logItem(state, state.victoryReason, "system");
 };
 
 const checkVictory = (state: GameState, playerId: string) => {
@@ -942,25 +972,21 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
       logItem(state, `${actor.name} ha lasciato la sala.`);
       return state;
     }
-    assertRule(actor.status === "active", "Hai già abbandonato la partita.");
-    actor.status = "resigned";
-    TERRITORIES.forEach((territory) => {
-      if (state.territories[territory.id].ownerId === playerId) {
-        state.territories[territory.id].ownerId = NEUTRAL_ID;
-      }
-    });
-    if (state.pendingBattle?.attackerId === playerId || state.pendingBattle?.defenderId === playerId) {
-      state.pendingBattle = undefined;
-    }
-    if (state.pendingMove?.playerId === playerId) state.pendingMove = undefined;
-    logItem(state, `${actor.name} ha abbandonato la partita.`, "system");
-    const active = state.players.filter((player) => player.status === "active");
-    if (active.length === 1) finishGame(state, active[0].id, "è l'ultima armata rimasta sulla mappa.");
-    else if (state.currentPlayerId === playerId) {
-      if (state.phase === "setup") {
-        if (allSetupComplete(state)) beginFirstTurn(state);
-        else advanceSetupTurn(state);
-      } else nextTurn(state);
+    assertRule(!actor.isBot && !actor.abandoned, "Hai già abbandonato la partita.");
+    actor.abandoned = true;
+    actor.abandonedProfileId = actor.profileId;
+    actor.profileId = undefined;
+    const remainingHumans = state.players.filter(
+      (player) => player.id !== playerId && !player.isBot && !player.abandoned && player.status === "active",
+    );
+    if (actor.status === "active") actor.isBot = true;
+    if (state.hostId === playerId && remainingHumans.length) state.hostId = remainingHumans[0].id;
+    if (!remainingHumans.length) {
+      closeGameWithoutHumans(state);
+    } else if (actor.status === "active") {
+      logItem(state, `${actor.name} ha abbandonato: un bot sostitutivo continuerà a giocare al suo posto.`, "system");
+    } else {
+      logItem(state, `${actor.name} ha lasciato la partita.`, "system");
     }
     return state;
   }
@@ -1175,6 +1201,7 @@ export const sanitizeState = (state: GameState, meId: string): PublicGameState =
     players: normalized.players.map((player) => {
       const publicPlayer = structuredClone(player);
       delete publicPlayer.profileId;
+      delete publicPlayer.abandonedProfileId;
       return {
         ...publicPlayer,
         cards: player.id === meId || revealAll ? structuredClone(player.cards) : [],

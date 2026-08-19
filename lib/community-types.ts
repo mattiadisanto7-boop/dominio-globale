@@ -45,3 +45,11 @@ export type AccountEnvelope = {
   token: string;
   profile: PublicProfile;
 };
+
+export type FriendsSnapshot = {
+  friends: PublicProfile[];
+  incoming: PublicProfile[];
+  outgoing: PublicProfile[];
+};
+
+export type FriendActionIntent = "request" | "accept" | "reject" | "cancel" | "remove";

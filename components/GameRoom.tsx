@@ -73,7 +73,7 @@ function PlayerStrip({ state, meId }: { state: PublicGameState; meId: string }) 
     const armies = territories.reduce((sum, territory) => sum + state.territories[territory.id].armies, 0);
     return (
       <article key={player.id} className={`strip-player ${state.currentPlayerId === player.id ? "current" : ""} ${player.status !== "active" ? "inactive" : ""}`} style={{ "--player-color": player.color } as React.CSSProperties}>
-        <span className="strip-avatar">{player.isBot ? "◆" : player.name.slice(0, 1).toUpperCase()}</span><div><b>{player.name}{player.isBot ? " · BOT" : player.id === meId ? " · tu" : ""}</b><small>{territories.length} territori · {armies} armate · {player.cardCount} carte</small></div>
+        <span className="strip-avatar">{player.isBot ? "◆" : player.name.slice(0, 1).toUpperCase()}</span><div><b>{player.name}{player.abandoned ? " · BOT SOSTITUTIVO" : player.isBot ? " · BOT" : player.id === meId ? " · tu" : ""}</b><small>{territories.length} territori · {armies} armate · {player.cardCount} carte</small></div>
         {state.currentPlayerId === player.id && state.phase !== "gameover" && <span className="turn-flag">TURNO</span>}
         {player.status !== "active" && <span className="turn-flag eliminated">{player.status === "resigned" ? "RITIRATO" : "ELIMINATO"}</span>}
       </article>
@@ -199,7 +199,7 @@ function ChatDrawer({ state, meId, action }: { state: PublicGameState; meId: str
   </div><form onSubmit={send}><input value={text} onChange={(event) => setText(event.target.value.slice(0, 180))} placeholder="Scrivi un messaggio…" /><button>Invia</button></form></aside>}</>;
 }
 
-export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { envelope: RoomEnvelope; onEnvelope: (value: RoomEnvelope) => void; token: string; onLeave: () => void }) {
+export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { envelope: RoomEnvelope; onEnvelope: (value: RoomEnvelope) => void; token: string; onLeave: (forgetToken?: boolean) => void }) {
   const { state, meId } = envelope;
   const me = state.players.find((player) => player.id === meId);
   const isSpectator = envelope.role === "spectator";
@@ -308,6 +308,30 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     finally { setBusy(false); }
   }, [busy, envelope.version, isSpectator, load, onEnvelope, state.code, state.currentPlayerId, state.phase, token]);
 
+  const leavePermanently = useCallback(async () => {
+    if (busy || isSpectator) return;
+    setBusy(true);
+    setError("");
+    let completed = false;
+    try {
+      const response = await fetch(`/api/rooms/${state.code}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(state.phase === "lobby"
+          ? { intent: "leave", version: envelope.version }
+          : { intent: "action", version: envelope.version, action: { type: "resign" } }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(readError(payload, "Non è stato possibile lasciare la sala."));
+      completed = true;
+      onLeave(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Non è stato possibile lasciare la sala.");
+    } finally {
+      if (!completed) setBusy(false);
+    }
+  }, [busy, envelope.version, isSpectator, onLeave, state.code, state.phase, token]);
+
   const currentPlayer = state.players.find((player) => player.id === state.currentPlayerId);
   useEffect(() => {
     if (
@@ -377,7 +401,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     }
   };
 
-  if (state.phase === "lobby") return <LobbyScreen envelope={envelope} action={action} busy={busy} onLeave={onLeave} />;
+  if (state.phase === "lobby") return <LobbyScreen envelope={envelope} action={action} busy={busy} error={error} onLeave={() => void leavePermanently()} />;
   const remaining = state.deadlineAt && now > 0 ? state.deadlineAt - now : undefined;
   const timedStage = state.timedEndgame?.stage === "running" && remaining !== undefined && remaining <= 0
     ? "penultimate"
@@ -396,7 +420,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   return (
     <main className="game-shell">
       <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={timedStage && timedStage !== "running" ? "expired endgame" : ""}><small>{timerLabel}</small><b>{timerValue}</b></span>}{(isSpectator || envelope.spectatorCount > 0) && <span className="spectator-top-chip"><small>{isSpectator ? "DIRETTA" : "SPETTATORI"}</small><b>{isSpectator ? "◉ LIVE" : envelope.spectatorCount}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
-        {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{!isSpectator && state.phase !== "gameover" && <button className="danger-text" onClick={() => action({ type: "resign" })}>Abbandona la partita</button>}<button onClick={onLeave}>Torna al menu</button></div>}
+        {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{!isSpectator && state.phase !== "gameover" && <button className="danger-text" disabled={busy} onClick={() => void leavePermanently()}>Abbandona e lascia il posto a un bot</button>}<button onClick={() => onLeave()}>Torna al menu</button></div>}
       </header>
       <PlayerStrip state={state} meId={meId} />
       <div className="game-layout">
