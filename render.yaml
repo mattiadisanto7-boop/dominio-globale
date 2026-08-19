@@ -4,8 +4,8 @@ services:
     runtime: node
     region: frankfurt
     plan: free
-    autoDeploy: true
-    buildCommand: npm ci && npm run validate:objectives && npm run build
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run check
     startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
