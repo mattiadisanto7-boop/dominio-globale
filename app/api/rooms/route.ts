@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       : 4;
     const timeLimitMinutes = [0, 45, 60, 90].includes(Number(payload.timeLimitMinutes))
       ? (Number(payload.timeLimitMinutes) as GameSettings["timeLimitMinutes"])
-      : 0;
+      : 90;
     const settings: GameSettings = {
       maxPlayers,
       mode: "missioni",

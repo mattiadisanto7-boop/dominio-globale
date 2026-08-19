@@ -143,6 +143,7 @@ export const createLobby = (
   territories: emptyTerritories(),
   reinforcementPool: 0,
   conqueredThisTurn: false,
+  territoriesConqueredThisTurn: 0,
   fortifyUsed: false,
   deck: [],
   discard: [],
@@ -196,15 +197,21 @@ const initializeGame = (state: GameState) => {
   state.deadlineAt = state.settings.timeLimitMinutes
     ? state.startedAt + state.settings.timeLimitMinutes * 60_000
     : undefined;
+  state.timedEndgame = state.deadlineAt
+    ? { stage: "running", threshold: 4, turnsAtThreshold: 0 }
+    : undefined;
   state.deck = createDeck();
   state.discard = [];
   state.reinforcementPool = 0;
   state.resumePhase = undefined;
   state.conqueredThisTurn = false;
+  state.territoriesConqueredThisTurn = 0;
   state.fortifyUsed = false;
   state.pendingBattle = undefined;
   state.pendingMove = undefined;
   state.lastBattle = undefined;
+  state.lastContinentConquest = undefined;
+  state.lastSuddenDeath = undefined;
   state.winnerId = undefined;
   state.victoryReason = undefined;
   state.settings.mode = "missioni";
@@ -372,6 +379,52 @@ const isConnectedThroughOwned = (
   return false;
 };
 
+const bordersEnemy = (state: GameState, territoryId: TerritoryId, playerId: string) =>
+  TERRITORY_BY_ID[territoryId].adjacent.some(
+    (adjacentId) => state.territories[adjacentId].ownerId !== playerId,
+  );
+
+const normalizeRuntimeState = (state: GameState) => {
+  if (!Number.isFinite(state.territoriesConqueredThisTurn)) {
+    state.territoriesConqueredThisTurn = state.conqueredThisTurn ? 1 : 0;
+  }
+  if (state.deadlineAt && !state.timedEndgame && state.phase !== "gameover") {
+    state.timedEndgame = { stage: "running", threshold: 4, turnsAtThreshold: 0 };
+  }
+  if (!state.deadlineAt) state.timedEndgame = undefined;
+  if (state.pendingMove && state.pendingMove.sourceMinimum === undefined) {
+    const sourceMinimum = bordersEnemy(state, state.pendingMove.from, state.pendingMove.playerId) ? 2 : 1;
+    const sourceArmies = state.territories[state.pendingMove.from].armies;
+    const legalMaximum = sourceArmies - sourceMinimum;
+    state.pendingMove.forcedException = legalMaximum < state.pendingMove.min;
+    state.pendingMove.sourceMinimum = state.pendingMove.forcedException ? 1 : sourceMinimum;
+    state.pendingMove.max = Math.min(
+      state.pendingMove.max,
+      Math.max(state.pendingMove.min, legalMaximum),
+    );
+  }
+};
+
+const syncTimedEndgame = (state: GameState) => {
+  if (
+    state.phase === "lobby" ||
+    state.phase === "gameover" ||
+    !state.deadlineAt ||
+    !state.timedEndgame ||
+    state.timedEndgame.stage !== "running" ||
+    Date.now() < state.deadlineAt
+  ) return;
+  state.timedEndgame.stage = "penultimate";
+  state.timedEndgame.activatedAt = Date.now();
+  state.timedEndgame.threshold = 4;
+  state.timedEndgame.turnsAtThreshold = 0;
+  logItem(
+    state,
+    "Tempo scaduto: si completa il giro in corso, poi si giocherà l'ultimo giro completo prima della sdadata.",
+    "turn",
+  );
+};
+
 const objectiveMet = (state: GameState, player: GamePlayer) => {
   const objective = player.objective;
   if (!objective) return false;
@@ -451,10 +504,37 @@ const resolveBattle = (state: GameState, defenderDice: number[]) => {
   to.ownerId = battle.attackerId;
   to.armies = 0;
   state.conqueredThisTurn = true;
+  state.territoriesConqueredThisTurn += 1;
   attacker.stats.territoriesConquered += 1;
-  const max = from.armies - 1;
-  const min = Math.max(1, Math.min(battle.requestedDice, max));
-  state.pendingMove = { playerId: battle.attackerId, from: battle.from, to: battle.to, min, max };
+  const rawMax = from.armies - 1;
+  const min = Math.max(1, Math.min(battle.requestedDice, rawMax));
+  const borderMinimum = bordersEnemy(state, battle.from, battle.attackerId) ? 2 : 1;
+  const voluntaryMax = from.armies - borderMinimum;
+  const forcedException = voluntaryMax < min;
+  const max = Math.min(rawMax, Math.max(min, voluntaryMax));
+  state.pendingMove = {
+    playerId: battle.attackerId,
+    from: battle.from,
+    to: battle.to,
+    min,
+    max,
+    sourceMinimum: forcedException ? 1 : borderMinimum,
+    forcedException,
+  };
+
+  const conqueredContinent = TERRITORY_BY_ID[battle.to].continent;
+  if (ownsContinent(state, battle.attackerId, conqueredContinent)) {
+    state.lastContinentConquest = {
+      playerId: battle.attackerId,
+      continent: conqueredContinent,
+      at: state.lastBattle.at,
+    };
+    logItem(
+      state,
+      `${attacker.name} conquista l'intero continente ${CONTINENTS[conqueredContinent].name}!`,
+      "victory",
+    );
+  }
 
   if (defeatedOwnerId !== NEUTRAL_ID && ownedTerritories(state, defeatedOwnerId).length === 0) {
     const eliminated = playerById(state, defeatedOwnerId);
@@ -466,19 +546,35 @@ const resolveBattle = (state: GameState, defenderDice: number[]) => {
   }
 };
 
-const nextTurn = (state: GameState) => {
+const nextActiveTurnIndex = (state: GameState) => {
   const previousIndex = state.turnIndex;
   let nextIndex = previousIndex;
   do {
     nextIndex = (nextIndex + 1) % state.turnOrder.length;
   } while (playerById(state, state.turnOrder[nextIndex]).status !== "active" && nextIndex !== previousIndex);
-  if (nextIndex <= previousIndex) state.round += 1;
+  return nextIndex;
+};
+
+const nextTurnWraps = (state: GameState) => nextActiveTurnIndex(state) <= state.turnIndex;
+
+const nextTurn = (state: GameState) => {
+  const previousIndex = state.turnIndex;
+  const nextIndex = nextActiveTurnIndex(state);
+  const wrapped = nextIndex <= previousIndex;
+  if (wrapped) {
+    state.round += 1;
+    if (state.timedEndgame?.stage === "penultimate") {
+      state.timedEndgame.stage = "last-round";
+      logItem(state, "Inizia l'ultimo giro completo. Al termine partirà la sdadata con soglia 4.", "turn");
+    }
+  }
   state.turnIndex = nextIndex;
   state.currentPlayerId = state.turnOrder[nextIndex];
   state.phase = "reinforce";
   state.resumePhase = undefined;
   state.reinforcementPool = reinforcementCount(state, state.currentPlayerId);
   state.conqueredThisTurn = false;
+  state.territoriesConqueredThisTurn = 0;
   state.fortifyUsed = false;
   state.lastBattle = undefined;
   logItem(
@@ -495,25 +591,122 @@ const requireCurrentPlayer = (state: GameState, playerId: string) => {
   return player;
 };
 
-const claimTimeVictory = (state: GameState) => {
-  assertRule(state.deadlineAt && Date.now() >= state.deadlineAt, "Il tempo non è ancora scaduto.");
+const timedRanking = (state: GameState) => {
   const ranked = state.players
     .filter((player) => player.status === "active")
     .map((player) => {
       const targetIds = player.objective?.territoryIds ?? [];
-      const secured = targetIds.filter((territoryId) => state.territories[territoryId].ownerId === player.id);
-      const score = secured.reduce((sum, territoryId) => sum + TERRITORY_BY_ID[territoryId].value, 0);
-      const armies = secured.reduce((sum, territoryId) => sum + state.territories[territoryId].armies, 0);
-      const territories = ownedTerritories(state, player.id).length;
-      return { player, score, secured: secured.length, territories, armies };
+      const targetSet = new Set(targetIds);
+      const owned = ownedTerritories(state, player.id);
+      const secured = owned.filter((territory) => targetSet.has(territory.id));
+      const outside = owned.filter((territory) => !targetSet.has(territory.id));
+      const score = secured.reduce((sum, territory) => sum + territory.value, 0);
+      const outsideScore = outside.reduce((sum, territory) => sum + territory.value, 0);
+      const targetArmies = secured.reduce((sum, territory) => sum + state.territories[territory.id].armies, 0);
+      const outsideArmies = outside.reduce((sum, territory) => sum + state.territories[territory.id].armies, 0);
+      return {
+        player,
+        score,
+        outsideScore,
+        targetArmies,
+        outsideArmies,
+        cards: player.cards.length,
+        secured: secured.length,
+        outside: outside.length,
+        reverseTurnOrder: state.turnOrder.indexOf(player.id),
+      };
     })
-    .sort((a, b) => b.score - a.score || b.secured - a.secured || b.armies - a.armies || b.territories - a.territories);
-  finishGame(state, ranked[0].player.id, `miglior avanzamento sull'obiettivo allo scadere (${ranked[0].score}/86 punti).`);
+    .sort((a, b) =>
+      b.score - a.score ||
+      b.outsideScore - a.outsideScore ||
+      b.targetArmies - a.targetArmies ||
+      b.outsideArmies - a.outsideArmies ||
+      b.cards - a.cards ||
+      b.secured - a.secured ||
+      b.outside - a.outside ||
+      b.reverseTurnOrder - a.reverseTurnOrder,
+    );
+  assertRule(ranked.length > 0, "Non ci sono giocatori da classificare.");
+  return ranked;
+};
+
+const finishTimedGame = (state: GameState, closingPlayerId: string, total: number, threshold: number) => {
+  const winner = timedRanking(state)[0];
+  finishGame(
+    state,
+    winner.player.id,
+    `${playerName(state, closingPlayerId)} ha chiuso la sdadata con ${total} (soglia ${threshold}); ` +
+      `${winner.player.name} vince con ${winner.score}/86 punti nei territori obiettivo.`,
+  );
+};
+
+const resolveSuddenDeathTurn = (state: GameState, playerId: string) => {
+  const timed = state.timedEndgame;
+  assertRule(timed?.stage === "sudden-death", "La sdadata non è ancora iniziata.");
+  const threshold = timed.threshold;
+  const conqueredTerritories = state.territoriesConqueredThisTurn;
+  const skipped = conqueredTerritories > 2;
+  const dice = skipped ? undefined : (roll(2) as [number, number]);
+  const total = dice?.reduce((sum, value) => sum + value, 0);
+  const closed = total !== undefined && total <= threshold;
+  state.lastSuddenDeath = {
+    playerId,
+    dice,
+    total,
+    threshold,
+    closed,
+    skipped,
+    conqueredTerritories,
+    at: Date.now(),
+  };
+  if (skipped) {
+    logItem(
+      state,
+      `${playerName(state, playerId)} ha conquistato ${conqueredTerritories} territori: lancio della sdadata saltato.`,
+      "turn",
+    );
+  } else {
+    logItem(
+      state,
+      `${playerName(state, playerId)} lancia la sdadata: ${dice!.join(" + ")} = ${total}, soglia ${threshold}${closed ? " — partita chiusa!" : "."}`,
+      closed ? "victory" : "turn",
+    );
+  }
+  if (closed) {
+    finishTimedGame(state, playerId, total!, threshold);
+    return true;
+  }
+
+  timed.turnsAtThreshold += 1;
+  const activePlayers = state.players.filter((player) => player.status === "active").length;
+  if (timed.turnsAtThreshold >= activePlayers) {
+    timed.turnsAtThreshold = 0;
+    if (timed.threshold < 7) {
+      timed.threshold = (timed.threshold + 1) as 5 | 6 | 7;
+      logItem(state, `Nessuna chiusura nel giro: la soglia della sdadata sale a ${timed.threshold}.`, "turn");
+    }
+  }
+  return false;
+};
+
+const resolveTimedTurnEnd = (state: GameState, playerId: string) => {
+  const timed = state.timedEndgame;
+  if (!timed) return false;
+  if (timed.stage === "last-round" && nextTurnWraps(state)) {
+    timed.stage = "sudden-death";
+    timed.threshold = 4;
+    timed.turnsAtThreshold = 0;
+    logItem(state, "Ultimo giro concluso: comincia la sdadata. Si chiude con una somma pari o inferiore a 4.", "turn");
+  }
+  if (timed.stage !== "sudden-death") return false;
+  return resolveSuddenDeathTurn(state, playerId);
 };
 
 export const applyGameAction = (original: GameState, playerId: string, action: GameAction): GameState => {
   const state = structuredClone(original);
+  normalizeRuntimeState(state);
   normalizeSetupTurn(state);
+  syncTimedEndgame(state);
   const actor = playerById(state, playerId);
 
   if (action.type === "sendMessage") {
@@ -589,12 +782,6 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
         else advanceSetupTurn(state);
       } else nextTurn(state);
     }
-    return state;
-  }
-
-  if (action.type === "claimTimeVictory") {
-    assertRule(state.phase !== "lobby" && state.phase !== "gameover", "La partita non è in corso.");
-    claimTimeVictory(state);
     return state;
   }
 
@@ -716,6 +903,13 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(move.playerId === playerId, "Non spetta a te spostare queste armate.");
     const amount = Math.floor(action.amount);
     assertRule(amount >= move.min && amount <= move.max, "Quantità di armate non valida.");
+    const sourceAfterMove = state.territories[move.from].armies - amount;
+    const sourceBordersEnemy = bordersEnemy(state, move.from, playerId);
+    const forcedSingleArmyException = move.forcedException && amount === move.min && sourceAfterMove === 1;
+    assertRule(
+      !sourceBordersEnemy || sourceAfterMove >= 2 || forcedSingleArmyException,
+      "Un territorio confinante con un nemico deve conservare almeno 2 armate.",
+    );
     state.territories[move.from].armies -= amount;
     state.territories[move.to].armies += amount;
     state.pendingMove = undefined;
@@ -747,7 +941,13 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(action.from !== action.to, "Scegli due territori diversi.");
     assertRule(isConnectedThroughOwned(state, playerId, action.from, action.to), "I territori non sono collegati attraverso il tuo dominio.");
     const amount = Math.floor(action.amount);
-    assertRule(amount > 0 && amount < from.armies, "Devi lasciare almeno un'armata nel territorio di partenza.");
+    const minimumGarrison = bordersEnemy(state, action.from, playerId) ? 2 : 1;
+    assertRule(
+      amount > 0 && amount <= from.armies - minimumGarrison,
+      minimumGarrison === 2
+        ? "Il territorio confina con un nemico: devi lasciarvi almeno 2 armate."
+        : "Devi lasciare almeno un'armata nel territorio di partenza.",
+    );
     from.armies -= amount;
     to.armies += amount;
     state.fortifyUsed = true;
@@ -759,7 +959,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     const current = requireCurrentPlayer(state, playerId);
     assertRule(state.phase === "fortify", "Devi prima concludere la fase d'attacco.");
     if (state.conqueredThisTurn) drawCard(state, current);
-    if (!checkVictory(state, playerId)) nextTurn(state);
+    if (!checkVictory(state, playerId) && !resolveTimedTurnEnd(state, playerId)) nextTurn(state);
     return state;
   }
 
@@ -768,6 +968,7 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
 
 export const sanitizeState = (state: GameState, meId: string): PublicGameState => {
   const normalized = structuredClone(state);
+  normalizeRuntimeState(normalized);
   normalizeSetupTurn(normalized);
   const { deck, discard, ...publicState } = normalized;
   const revealAll = normalized.phase === "gameover";

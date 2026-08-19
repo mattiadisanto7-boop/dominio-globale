@@ -4,6 +4,8 @@ export type GameSound =
   | "dice"
   | "battle"
   | "conquest"
+  | "continent"
+  | "sdadata"
   | "fortify"
   | "cards"
   | "turn"
@@ -131,6 +133,20 @@ class GameSoundEngine {
         this.noise(0, .34, .13, 135, "lowpass", .5);
         this.tone(72, 0, .36, .24, "sawtooth", 34);
         [392, 523, 659, 784].forEach((frequency, index) => this.tone(frequency, .16 + index * .105, .42, .14, "triangle", frequency * 1.03));
+        break;
+      case "continent":
+        this.noise(0, .72, .12, 118, "lowpass", .45);
+        [196, 247, 294, 392, 494, 587, 784].forEach((frequency, index) => {
+          this.tone(frequency, index * .13, .7, .15, index < 3 ? "sawtooth" : "triangle", frequency * 1.015);
+        });
+        [0, .26, .52, .78].forEach((delay) => this.noise(delay, .13, .07, 1850, "highpass", .8));
+        break;
+      case "sdadata":
+        [0, .08, .17, .27, .39, .53].forEach((delay, index) => {
+          this.noise(delay, .075, .13 - index * .008, 820 + index * 120, "bandpass", .72);
+          this.tone(155 + index * 21, delay, .06, .085, "square", 105 + index * 12);
+        });
+        this.tone(294, .62, .42, .12, "triangle", 392);
         break;
       case "fortify":
         this.tone(64, 0, .4, .2, "sawtooth", 42);

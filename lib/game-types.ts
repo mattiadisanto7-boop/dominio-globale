@@ -1,4 +1,4 @@
-import type { CardSymbol, TerritoryId } from "@/lib/game-data";
+import type { CardSymbol, ContinentId, TerritoryId } from "@/lib/game-data";
 
 export type GamePhase =
   | "lobby"
@@ -72,6 +72,8 @@ export type MoveAfterConquest = {
   to: TerritoryId;
   min: number;
   max: number;
+  sourceMinimum: 1 | 2;
+  forcedException: boolean;
 };
 
 export type BattleReport = {
@@ -82,6 +84,32 @@ export type BattleReport = {
   attackerLosses: number;
   defenderLosses: number;
   conquered: boolean;
+  at: number;
+};
+
+export type ContinentConquestReport = {
+  playerId: string;
+  continent: ContinentId;
+  at: number;
+};
+
+export type TimedEndgameStage = "running" | "penultimate" | "last-round" | "sudden-death";
+
+export type TimedEndgameState = {
+  stage: TimedEndgameStage;
+  activatedAt?: number;
+  threshold: 4 | 5 | 6 | 7;
+  turnsAtThreshold: number;
+};
+
+export type SuddenDeathReport = {
+  playerId: string;
+  dice?: [number, number];
+  total?: number;
+  threshold: 4 | 5 | 6 | 7;
+  closed: boolean;
+  skipped: boolean;
+  conqueredTerritories: number;
   at: number;
 };
 
@@ -114,6 +142,7 @@ export type GameState = {
   createdAt: number;
   startedAt?: number;
   deadlineAt?: number;
+  timedEndgame?: TimedEndgameState;
   turnOrder: string[];
   turnIndex: number;
   round: number;
@@ -123,10 +152,13 @@ export type GameState = {
   reinforcementPool: number;
   resumePhase?: "attack";
   conqueredThisTurn: boolean;
+  territoriesConqueredThisTurn: number;
   fortifyUsed: boolean;
   pendingBattle?: BattleState;
   pendingMove?: MoveAfterConquest;
   lastBattle?: BattleReport;
+  lastContinentConquest?: ContinentConquestReport;
+  lastSuddenDeath?: SuddenDeathReport;
   deck: TerritoryCard[];
   discard: TerritoryCard[];
   log: GameLogItem[];
@@ -169,5 +201,4 @@ export type GameAction =
   | { type: "endTurn" }
   | { type: "sendMessage"; text: string }
   | { type: "resign" }
-  | { type: "rematch" }
-  | { type: "claimTimeVictory" };
+  | { type: "rematch" };

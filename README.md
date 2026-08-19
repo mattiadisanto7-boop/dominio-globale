@@ -12,13 +12,15 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 - sincronizzazione online, riconnessione e salvataggio persistente;
 - tabellone vettoriale realistico con 42 territori cliccabili, rotte marittime e pedine a forma di carro armato colorato con conteggio delle armate;
 - esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti, disegnate con le stesse sagome reali del tabellone;
-- territori della missione evidenziati con tratteggio rosso se mancanti e verde se già controllati, sia sulla plancia sia sulla carta obiettivo in fondo alla schermata;
+- territori della missione indicati sulla plancia con una tinta e un bordo discreti (rosso se mancanti, verde se già controllati) e mostrati in modo più netto sulla carta obiettivo in fondo alla schermata;
 - schieramento iniziale alternato a blocchi di 3 armate e passaggio automatico all'attacco dopo l'ultimo rinforzo;
 - dadi animati e conteggio regolamentare: un solo clic dell'attaccante lancia automaticamente attacco 3/2/1 con 4+/3/2 armate e difesa 3/2/1 con 3+/2/1 armate;
+- presidio minimo di 2 armate quando uno spostamento volontario parte da un territorio confinante con il nemico; l'eccezione viene applicata automaticamente quando l'occupazione minima dopo una conquista costringe a lasciarne una;
+- celebrazione a tutto schermo, particelle e fanfara quando un giocatore completa la conquista di un continente;
 - carta territorio appena pescata mostrata soltanto al proprietario e consultabile anche durante i turni avversari;
 - paesaggio sonoro militare sintetizzato dal browser: cingoli e metallo per gli schieramenti, dadi, artiglieria, conquiste, turni, carte e messaggi;
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
-- modalità classica o a tempo;
+- modalità principale Challenge da 90 minuti: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
 
 Il progetto usa **Next.js**, **React** e **PostgreSQL**. Nome, grafica e codice sono originali e non rappresentano un prodotto ufficiale RisiKo!.
@@ -79,7 +81,7 @@ npm run lint       # controllo ESLint
 npm run typecheck  # controllo TypeScript
 npm run import:board # rigenera le 42 sagome interattive dal tabellone SVG
 npm run validate:dice # verifica le regole automatiche 3/2/1 dei dadi
-npm run validate:flow # simula turni iniziali, battaglia automatica e privacy delle carte
+npm run validate:flow # simula schieramento, presidio, continente, sdadata, battaglia e privacy
 npm run validate:objectives # verifica 16 carte, connessione e 86 punti
 npm run build      # build di produzione
 npm run start      # avvio della build

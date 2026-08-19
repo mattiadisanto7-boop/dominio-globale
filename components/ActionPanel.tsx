@@ -53,7 +53,10 @@ export default function ActionPanel({
   const name = (id?: TerritoryId) => id ? TERRITORY_BY_ID[id].name : "—";
   const maxAttackDice = selectedFrom ? attackDiceForArmies(state.territories[selectedFrom].armies) : 0;
   const maxDefenseDice = selectedTo ? defenseDiceForArmies(state.territories[selectedTo].armies) : 0;
-  const maxFortify = selectedFrom ? Math.max(0, state.territories[selectedFrom].armies - 1) : 0;
+  const sourceMinimum = selectedFrom && TERRITORY_BY_ID[selectedFrom].adjacent.some(
+    (territoryId) => state.territories[territoryId].ownerId !== meId,
+  ) ? 2 : 1;
+  const maxFortify = selectedFrom ? Math.max(0, state.territories[selectedFrom].armies - sourceMinimum) : 0;
 
   if (state.phase === "setup") {
     const current = state.players.find((player) => player.id === state.currentPlayerId);
@@ -126,9 +129,9 @@ export default function ActionPanel({
   if (state.phase === "fortify") return (
     <section className="action-panel">
       <div className="action-kicker">FASE 3 · SPOSTAMENTO</div><h2>{state.fortifyUsed ? "Dominio consolidato" : selectedFrom ? "Scegli la destinazione" : "Spostamento strategico"}</h2>
-      <p>{state.fortifyUsed ? "Hai già spostato le armate. Puoi terminare il turno." : "Puoi spostare armate una sola volta tra due territori collegati del tuo dominio."}</p>
+      <p>{state.fortifyUsed ? "Hai già spostato le armate. Puoi terminare il turno." : "Puoi spostare armate una sola volta tra due territori collegati. Da un confine nemico devono restare almeno 2 armate."}</p>
       {!state.fortifyUsed && selectedFrom && selectedTo && <><div className="battle-route"><span>{name(selectedFrom)}</span><b>→</b><span>{name(selectedTo)}</span></div><input className="range-input" type="range" min={1} max={Math.max(1, maxFortify)} value={Math.min(fortifyAmount, Math.max(1, maxFortify))} onChange={(event) => setFortifyAmount(Number(event.target.value))} /><div className="range-label"><span>1</span><b>{Math.min(fortifyAmount, maxFortify)} armate</b><span>{maxFortify}</span></div><button className="primary-button full-button" disabled={busy || maxFortify < 1} onClick={() => action({ type: "fortify", from: selectedFrom, to: selectedTo, amount: Math.min(fortifyAmount, maxFortify) })}>Conferma spostamento</button></>}
-      {!state.fortifyUsed && selectedFrom && !selectedTo && <p className="selection-note">Partenza: <b>{name(selectedFrom)}</b>. Tocca un altro tuo territorio collegato.</p>}
+      {!state.fortifyUsed && selectedFrom && !selectedTo && <p className="selection-note">Partenza: <b>{name(selectedFrom)}</b>. Tocca un altro tuo territorio collegato. Presidio minimo: <b>{sourceMinimum}</b>.</p>}
       <button className="secondary-button full-button end-phase" disabled={busy} onClick={() => action({ type: "endTurn" })}>Termina turno {state.conqueredThisTurn ? "e pesca una carta" : ""}</button>
     </section>
   );

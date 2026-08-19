@@ -77,9 +77,14 @@ function ActivityLog({ state }: { state: PublicGameState }) {
 
 function ConquestDialog({ move, action, busy }: { move: NonNullable<PublicGameState["pendingMove"]>; action: (action: GameAction) => Promise<void>; busy: boolean }) {
   const [amount, setAmount] = useState(move.min);
+  const garrisonRule = move.forcedException
+    ? "L'occupazione minima rende inevitabile lasciare 1 armata nel territorio di partenza: qui si applica l'eccezione automatica."
+    : move.sourceMinimum === 2
+      ? "Il territorio di partenza confina ancora con un nemico: devono restarvi almeno 2 armate."
+      : "Il territorio di partenza non confina con nemici: deve restarvi almeno 1 armata.";
   return (
     <div className="modal-backdrop battle-backdrop" role="dialog" aria-modal="true" aria-label="Sposta dopo la conquista">
-      <div className="conquest-modal"><span className="conquest-icon">⚑</span><span className="eyebrow"><i /> Territorio conquistato</span><h2>{TERRITORY_BY_ID[move.to].name} è tuo</h2><p>Sposta le armate d&apos;occupazione da {TERRITORY_BY_ID[move.from].name}. Devi lasciarne almeno una indietro.</p>
+      <div className="conquest-modal"><span className="conquest-icon">⚑</span><span className="eyebrow"><i /> Territorio conquistato</span><h2>{TERRITORY_BY_ID[move.to].name} è tuo</h2><p>Sposta le armate d&apos;occupazione da {TERRITORY_BY_ID[move.from].name}. {garrisonRule}</p>
         <input className="range-input" type="range" min={move.min} max={move.max} value={Math.min(amount, move.max)} onChange={(event) => setAmount(Number(event.target.value))} /><div className="range-label"><span>{move.min}</span><b>{Math.min(amount, move.max)} armate</b><span>{move.max}</span></div>
         <button className="primary-button full-button" disabled={busy} onClick={() => action({ type: "moveAfterConquest", amount: Math.min(amount, move.max) })}>Occupa il territorio</button>
       </div>
@@ -89,8 +94,88 @@ function ConquestDialog({ move, action, busy }: { move: NonNullable<PublicGameSt
 
 function ConquestOverlay({ state, meId, action, busy }: { state: PublicGameState; meId: string; action: (action: GameAction) => Promise<void>; busy: boolean }) {
   const move = state.pendingMove;
-  if (!move || move.playerId !== meId) return null;
+  const [visibleKey, setVisibleKey] = useState("");
+  const moveKey = move ? `${move.from}-${move.to}-${move.min}-${move.max}` : "";
+  const isMyMove = move?.playerId === meId;
+  useEffect(() => {
+    if (!moveKey || !isMyMove) return;
+    const timer = window.setTimeout(() => setVisibleKey(moveKey), state.lastBattle?.conquered ? 3300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [isMyMove, moveKey, state.lastBattle?.conquered]);
+  if (!move || move.playerId !== meId || visibleKey !== moveKey) return null;
   return <ConquestDialog key={`${move.from}-${move.to}-${move.min}-${move.max}`} move={move} action={action} busy={busy} />;
+}
+
+function ContinentCelebration({ state }: { state: PublicGameState }) {
+  const initialAt = useRef(state.lastContinentConquest?.at);
+  const [report, setReport] = useState<PublicGameState["lastContinentConquest"]>();
+  useEffect(() => {
+    const next = state.lastContinentConquest;
+    if (!next?.at || next.at === initialAt.current) return;
+    initialAt.current = next.at;
+    const reveal = window.setTimeout(() => setReport(next), 3350);
+    const close = window.setTimeout(() => setReport(undefined), 6900);
+    return () => { window.clearTimeout(reveal); window.clearTimeout(close); };
+  }, [state.lastContinentConquest]);
+  if (!report) return null;
+  const continent = CONTINENTS[report.continent];
+  const player = state.players.find((item) => item.id === report.playerId);
+  return (
+    <div className="continent-celebration" role="status" aria-live="assertive" style={{ "--celebration-color": player?.color ?? continent.color } as React.CSSProperties}>
+      <div className="continent-rays" />
+      <div className="continent-particles" aria-hidden="true">{Array.from({ length: 28 }, (_, index) => <i key={index} style={{ "--particle-angle": `${index * 12.857}deg`, "--particle-delay": `${index * -31}ms` } as React.CSSProperties} />)}</div>
+      <div className="continent-medal"><span>✦</span><small>DOMINIO CONTINENTALE</small></div>
+      <p>{player?.name} ha conquistato</p>
+      <h2>{continent.name}</h2>
+      <strong>+{continent.bonus} ARMATE A OGNI TURNO</strong>
+      <div className="continent-flags"><i /><i /><i /><i /><i /></div>
+    </div>
+  );
+}
+
+function SuddenDeathOverlay({ state }: { state: PublicGameState }) {
+  const initialAt = useRef(state.lastSuddenDeath?.at);
+  const [report, setReport] = useState<PublicGameState["lastSuddenDeath"]>();
+  const [rolling, setRolling] = useState(false);
+  useEffect(() => {
+    const next = state.lastSuddenDeath;
+    if (!next?.at || next.at === initialAt.current) return;
+    initialAt.current = next.at;
+    setReport(next);
+    setRolling(!next.skipped);
+    const settle = window.setTimeout(() => setRolling(false), 820);
+    const close = window.setTimeout(() => setReport(undefined), next.closed ? 4100 : 3300);
+    return () => { window.clearTimeout(settle); window.clearTimeout(close); };
+  }, [state.lastSuddenDeath]);
+  if (!report) return null;
+  const player = state.players.find((item) => item.id === report.playerId);
+  return (
+    <div className={`sdadata-overlay ${report.closed ? "closed" : ""} ${report.skipped ? "skipped" : ""}`} role="status" aria-live="assertive">
+      <span className="eyebrow"><i /> FINALE DA TORNEO</span>
+      <h2>SDADATA</h2>
+      <p>{player?.name}</p>
+      {report.skipped ? (
+        <div className="sdadata-skip"><b>{report.conqueredTerritories}</b><span>territori conquistati<br />lancio saltato</span></div>
+      ) : (
+        <><GraphicDiceRow values={report.dice ?? []} tone="sdadata" rolling={rolling} /><div className="sdadata-result"><b>{report.total}</b><span>chiusura ≤ {report.threshold}</span></div></>
+      )}
+      <strong>{report.skipped ? "LA PARTITA CONTINUA" : report.closed ? "PARTITA CHIUSA" : "LA CAMPAGNA CONTINUA"}</strong>
+    </div>
+  );
+}
+
+function TimedEndgamePanel({ state, remaining }: { state: PublicGameState; remaining?: number }) {
+  if (!state.deadlineAt || state.phase === "gameover") return null;
+  const stage = state.timedEndgame?.stage === "running" && remaining !== undefined && remaining <= 0
+    ? "penultimate"
+    : state.timedEndgame?.stage;
+  if (!stage || stage === "running") return null;
+  const copy = stage === "penultimate"
+    ? ["TEMPO SCADUTO", "Completa il giro in corso. Dopo inizierà l'ultimo giro completo."]
+    : stage === "last-round"
+      ? ["ULTIMO GIRO", "È l'ultimo giro regolamentare. La sdadata partirà alla fine."]
+      : [`SDADATA · CHIUSURA ≤ ${state.timedEndgame?.threshold ?? 4}`, "A fine turno il server lancia 2 dadi. Con 3+ conquiste il lancio viene saltato."];
+  return <div className={`timed-endgame-panel ${stage}`}><span>{copy[0]}</span><p>{copy[1]}</p></div>;
 }
 
 function ChatDrawer({ state, meId, action }: { state: PublicGameState; meId: string; action: (action: GameAction) => Promise<void> }) {
@@ -115,6 +200,8 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   const audioState = useRef({
     pendingAt: state.pendingBattle?.createdAt,
     battleAt: state.lastBattle?.at,
+    continentAt: state.lastContinentConquest?.at,
+    suddenDeathAt: state.lastSuddenDeath?.at,
     currentPlayerId: state.currentPlayerId,
     phase: state.phase,
     messageCount: state.messages.length,
@@ -131,10 +218,17 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       gameSound.play("dice");
       timers.push(window.setTimeout(() => gameSound.play(state.lastBattle?.conquered ? "conquest" : "battle"), 760));
     }
+    if (state.lastContinentConquest?.at && state.lastContinentConquest.at !== previous.continentAt) {
+      timers.push(window.setTimeout(() => gameSound.play("continent"), 3380));
+    }
+    const suddenDeathChanged = Boolean(
+      state.lastSuddenDeath?.at && state.lastSuddenDeath.at !== previous.suddenDeathAt,
+    );
+    if (suddenDeathChanged) gameSound.play(state.lastSuddenDeath?.skipped ? "turn" : "sdadata");
     const drewCard = me.cardCount > previous.myCardCount;
     if (drewCard) gameSound.play("cards");
     if (state.phase === "gameover" && previous.phase !== "gameover") {
-      timers.push(window.setTimeout(() => gameSound.play("victory"), 360));
+      timers.push(window.setTimeout(() => gameSound.play("victory"), suddenDeathChanged ? 2600 : 360));
     } else if (state.currentPlayerId && state.currentPlayerId !== previous.currentPlayerId) {
       timers.push(window.setTimeout(() => gameSound.play("turn"), drewCard ? 480 : 0));
     }
@@ -144,13 +238,15 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     audioState.current = {
       pendingAt: state.pendingBattle?.createdAt,
       battleAt: state.lastBattle?.at,
+      continentAt: state.lastContinentConquest?.at,
+      suddenDeathAt: state.lastSuddenDeath?.at,
       currentPlayerId: state.currentPlayerId,
       phase: state.phase,
       messageCount: state.messages.length,
       myCardCount: me.cardCount,
     };
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [me.cardCount, meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.messages, state.pendingBattle?.createdAt, state.phase]);
+  }, [me.cardCount, meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.lastContinentConquest?.at, state.lastSuddenDeath?.at, state.lastSuddenDeath?.skipped, state.messages, state.pendingBattle?.createdAt, state.phase]);
 
   const load = useCallback(async (silent = true) => {
     if (loading.current) return; loading.current = true;
@@ -206,7 +302,10 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       return;
     }
     if (state.phase === "fortify" && !state.fortifyUsed && territory.ownerId === meId) {
-      if (!selectedFrom) { if (territory.armies > 1) setSelectedFrom(id); }
+      if (!selectedFrom) {
+        const minimum = TERRITORY_BY_ID[id].adjacent.some((adjacentId) => state.territories[adjacentId].ownerId !== meId) ? 2 : 1;
+        if (territory.armies > minimum) setSelectedFrom(id);
+      }
       else if (id === selectedFrom) { setSelectedFrom(undefined); setSelectedTo(undefined); }
       else setSelectedTo(id);
     }
@@ -214,10 +313,23 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
 
   if (state.phase === "lobby") return <LobbyScreen envelope={envelope} action={action} busy={busy} onLeave={onLeave} />;
   const remaining = state.deadlineAt && now > 0 ? state.deadlineAt - now : undefined;
+  const timedStage = state.timedEndgame?.stage === "running" && remaining !== undefined && remaining <= 0
+    ? "penultimate"
+    : state.timedEndgame?.stage;
+  const timerLabel = timedStage === "penultimate"
+    ? "PENULTIMO GIRO"
+    : timedStage === "last-round"
+      ? "ULTIMO GIRO"
+      : timedStage === "sudden-death"
+        ? `SDADATA ≤${state.timedEndgame?.threshold ?? 4}`
+        : "TIME ATTACK";
+  const timerValue = timedStage && timedStage !== "running"
+    ? timedStage === "sudden-death" ? "2 DADI" : `ROUND ${state.round}`
+    : remaining !== undefined ? formatTime(remaining) : "—";
 
   return (
     <main className="game-shell">
-      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={remaining <= 0 ? "expired" : ""}><small>TIME ATTACK</small><b>{formatTime(remaining)}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
+      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={timedStage && timedStage !== "running" ? "expired endgame" : ""}><small>{timerLabel}</small><b>{timerValue}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
         {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{state.phase !== "gameover" && <button className="danger-text" onClick={() => action({ type: "resign" })}>Abbandona la partita</button>}<button onClick={onLeave}>Torna al menu</button></div>}
       </header>
       <PlayerStrip state={state} meId={meId} />
@@ -230,13 +342,16 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
         </section>
         <aside className="control-column">
           <DrawnCardPanel player={me} />
+          <TimedEndgamePanel state={state} remaining={remaining} />
           <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />
-          {remaining !== undefined && remaining <= 0 && state.phase !== "gameover" && <button className="danger-button full-button" onClick={() => action({ type: "claimTimeVictory" })}>Calcola il vincitore ai punti</button>}
           {error && <div className="game-error" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         </aside>
       </div>
       <section className="bottom-objective" aria-label="La tua carta obiettivo"><ObjectiveCard state={state} player={me} /></section>
-      <ConquestOverlay state={state} meId={meId} action={action} busy={busy} /><ChatDrawer state={state} meId={meId} action={action} />
+      <ConquestOverlay state={state} meId={meId} action={action} busy={busy} />
+      <ContinentCelebration state={state} />
+      <SuddenDeathOverlay state={state} />
+      <ChatDrawer state={state} meId={meId} action={action} />
     </main>
   );
 }

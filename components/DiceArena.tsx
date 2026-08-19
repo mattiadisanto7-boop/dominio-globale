@@ -13,7 +13,7 @@ const PIPS: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
-export function PipDie({ value, tone, rolling = false, delay = 0 }: { value: number; tone: "attack" | "defense"; rolling?: boolean; delay?: number }) {
+export function PipDie({ value, tone, rolling = false, delay = 0 }: { value: number; tone: "attack" | "defense" | "sdadata"; rolling?: boolean; delay?: number }) {
   const active = new Set(PIPS[value] ?? []);
   return (
     <span className={`pip-die ${tone} ${rolling ? "rolling" : ""}`} style={{ "--die-delay": `${delay}ms` } as React.CSSProperties} aria-label={`${value}`}>
@@ -22,7 +22,7 @@ export function PipDie({ value, tone, rolling = false, delay = 0 }: { value: num
   );
 }
 
-export function GraphicDiceRow({ values, tone, rolling = false }: { values: number[]; tone: "attack" | "defense"; rolling?: boolean }) {
+export function GraphicDiceRow({ values, tone, rolling = false }: { values: number[]; tone: "attack" | "defense" | "sdadata"; rolling?: boolean }) {
   return <div className={`graphic-dice-row ${tone}`}>{values.map((value, index) => <PipDie key={`${value}-${index}`} value={value} tone={tone} rolling={rolling} delay={index * 90} />)}</div>;
 }
 

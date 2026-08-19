@@ -40,6 +40,16 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const assertRuleError = (operation, message) => {
+  try {
+    operation();
+  } catch (error) {
+    if (error?.name === "GameRuleError") return;
+    throw error;
+  }
+  throw new Error(message);
+};
+
 const engine = (await loadModule(path.join(root, "lib/game-engine.ts"))).namespace;
 const gameData = (await loadModule(path.join(root, "lib/game-data.ts"))).namespace;
 const { createLobby, addLobbyPlayer, applyGameAction, sanitizeState } = engine;
@@ -113,6 +123,72 @@ const opponentView = sanitizeState(state, state.currentPlayerId).players.find((p
 assert(privateView.lastDrawnCard?.id === drawer.lastDrawnCard.id, "Chi pesca deve vedere la propria ultima carta anche nel turno seguente.");
 assert(!opponentView.lastDrawnCard, "L'ultima carta pescata non deve essere rivelata agli avversari.");
 
+const garrison = structuredClone(state);
+const garrisonPlayerId = garrison.currentPlayerId;
+const garrisonEnemyId = garrison.players.find((player) => player.id !== garrisonPlayerId).id;
+garrison.phase = "fortify";
+garrison.reinforcementPool = 0;
+garrison.fortifyUsed = false;
+garrison.currentPlayerId = garrisonPlayerId;
+garrison.turnIndex = garrison.turnOrder.indexOf(garrisonPlayerId);
+garrison.territories.ukraine = { ownerId: garrisonPlayerId, armies: 5 };
+garrison.territories.scandinavia = { ownerId: garrisonPlayerId, armies: 2 };
+garrison.territories["middle-east"] = { ownerId: garrisonEnemyId, armies: 2 };
+assertRuleError(
+  () => applyGameAction(garrison, garrisonPlayerId, { type: "fortify", from: "ukraine", to: "scandinavia", amount: 4 }),
+  "Non deve essere possibile lasciare una sola armata su un confine nemico.",
+);
+const legalGarrison = applyGameAction(garrison, garrisonPlayerId, { type: "fortify", from: "ukraine", to: "scandinavia", amount: 3 });
+assert(legalGarrison.territories.ukraine.armies === 2, "Lo spostamento deve consentire il presidio minimo di 2 armate.");
+
+let continentGame = structuredClone(state);
+const continentAttackerId = continentGame.currentPlayerId;
+const continentDefenderId = continentGame.players.find((player) => player.id !== continentAttackerId).id;
+continentGame.phase = "attack";
+continentGame.pendingMove = undefined;
+continentGame.pendingBattle = undefined;
+continentGame.territories.siam = { ownerId: continentAttackerId, armies: 80 };
+continentGame.territories.indonesia = { ownerId: continentDefenderId, armies: 1 };
+continentGame.territories["new-guinea"] = { ownerId: continentAttackerId, armies: 2 };
+continentGame.territories["western-australia"] = { ownerId: continentAttackerId, armies: 2 };
+continentGame.territories["eastern-australia"] = { ownerId: continentAttackerId, armies: 2 };
+for (let attempt = 0; attempt < 80 && !continentGame.pendingMove; attempt += 1) {
+  continentGame = applyGameAction(continentGame, continentAttackerId, { type: "attack", from: "siam", to: "indonesia" });
+}
+assert(continentGame.pendingMove, "Il test di conquista continentale non ha conquistato l'Indonesia.");
+assert(continentGame.lastContinentConquest?.continent === "oceania", "La conquista dell'Oceania deve generare l'evento celebrativo.");
+assert(
+  continentGame.territories.siam.armies - continentGame.pendingMove.max >= 2 || continentGame.pendingMove.forcedException,
+  "L'occupazione deve conservare 2 armate sul confine, salvo spostamento minimo obbligatorio.",
+);
+
+let timed = structuredClone(state);
+timed.deadlineAt = Date.now() - 1_000;
+timed.timedEndgame = { stage: "running", threshold: 4, turnsAtThreshold: 0 };
+timed.turnIndex = 0;
+timed.currentPlayerId = timed.turnOrder[0];
+timed.phase = "fortify";
+timed.fortifyUsed = false;
+timed.conqueredThisTurn = false;
+timed.territoriesConqueredThisTurn = 0;
+timed = applyGameAction(timed, timed.currentPlayerId, { type: "endTurn" });
+assert(timed.timedEndgame.stage === "penultimate", "Allo scadere deve terminare il giro in corso.");
+timed.phase = "fortify";
+timed = applyGameAction(timed, timed.currentPlayerId, { type: "endTurn" });
+assert(timed.timedEndgame.stage === "last-round", "Dopo il giro corrente deve iniziare l'ultimo giro.");
+timed.phase = "fortify";
+timed = applyGameAction(timed, timed.currentPlayerId, { type: "endTurn" });
+assert(timed.timedEndgame.stage === "last-round", "La sdadata non deve partire prima della fine dell'ultimo giro.");
+timed.phase = "fortify";
+timed.territoriesConqueredThisTurn = 3;
+timed = applyGameAction(timed, timed.currentPlayerId, { type: "endTurn" });
+assert(timed.timedEndgame.stage === "sudden-death", "Alla fine dell'ultimo giro deve iniziare la sdadata.");
+assert(timed.lastSuddenDeath?.skipped && !timed.lastSuddenDeath.dice, "Con 3 conquiste il lancio della sdadata deve essere saltato.");
+timed.phase = "fortify";
+timed.territoriesConqueredThisTurn = 3;
+timed = applyGameAction(timed, timed.currentPlayerId, { type: "endTurn" });
+assert(timed.timedEndgame.threshold === 5, "Dopo un giro completo la soglia della sdadata deve salire da 4 a 5.");
+
 const finished = structuredClone(state);
 finished.phase = "gameover";
 finished.winnerId = "alpha";
@@ -120,4 +196,4 @@ finished.players.find((player) => player.id === "bravo").status = "eliminated";
 const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
 assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
 
-console.log(`OK · ${setupActions} blocchi alternati · attacco/difesa automatici · carta privata · rivincita`);
+console.log(`OK · ${setupActions} blocchi alternati · presidio 2 · continente · sdadata · carta privata · rivincita`);

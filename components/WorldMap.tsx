@@ -60,17 +60,13 @@ export default function WorldMap({
           <filter id="tokenShadow" x="-100%" y="-100%" width="300%" height="300%">
             <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" floodColor="#000" floodOpacity=".82" />
           </filter>
-          <filter id="missionGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="1.6" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
           <pattern id="missionMissingPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-            <rect width="7" height="7" fill="#d71934" fillOpacity=".34" />
-            <rect width="2" height="7" fill="#ff9aa2" fillOpacity=".42" />
+            <rect width="7" height="7" fill="#e35c68" fillOpacity=".075" />
+            <rect width="1.2" height="7" fill="#ffb1b7" fillOpacity=".11" />
           </pattern>
           <pattern id="missionSecuredPattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-            <rect width="7" height="7" fill="#10a967" fillOpacity=".3" />
-            <rect width="2" height="7" fill="#9cffcf" fillOpacity=".4" />
+            <rect width="7" height="7" fill="#45b982" fillOpacity=".065" />
+            <rect width="1.2" height="7" fill="#a9f5d1" fillOpacity=".09" />
           </pattern>
           <marker id="attackArrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
             <path d="M0 0 L0 6 L6 3 Z" fill="#ffe5a5" />
@@ -157,7 +153,7 @@ export default function WorldMap({
                   <text textAnchor="middle" y="2">{territory.short} <tspan>· {territory.value}</tspan></text>
                 </g>
                 {mission && (
-                  <g className={`objective-pin ${secured ? "secured" : "missing"}`} transform={`translate(${center.x + 10.5} ${center.y - 13})`} filter="url(#missionGlow)">
+                  <g className={`objective-pin ${secured ? "secured" : "missing"}`} transform={`translate(${center.x + 10.5} ${center.y - 13})`}>
                     <circle r="4.7" />
                     <text textAnchor="middle" y="2.1">{secured ? "✓" : "!"}</text>
                   </g>
