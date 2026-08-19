@@ -1,6 +1,7 @@
 import { PLAYER_COLORS } from "@/lib/game-data";
 import { createLobby } from "@/lib/game-engine";
 import {
+  authenticateProfile,
   createSecretToken,
   hashToken,
   insertGame,
@@ -8,8 +9,10 @@ import {
 } from "@/lib/game-store";
 import type { GameSettings } from "@/lib/game-types";
 
-const cleanName = (value: unknown) =>
-  typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, 24) : "";
+const bearer = (request: Request) => {
+  const value = request.headers.get("authorization") ?? "";
+  return value.startsWith("Bearer ") ? value.slice(7) : "";
+};
 
 const generateCode = () => {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -24,11 +27,10 @@ export async function POST(request: Request) {
       name?: string;
       maxPlayers?: number;
       timeLimitMinutes?: number;
+      visibility?: "public" | "private";
     };
-    const name = cleanName(payload.name);
-    if (name.length < 2) {
-      return Response.json({ error: "Inserisci un nome di almeno 2 caratteri." }, { status: 400 });
-    }
+    const profile = await authenticateProfile(bearer(request), "home");
+    if (!profile) return Response.json({ error: "Accedi al tuo profilo per creare una stanza." }, { status: 401 });
 
     const maxPlayers = [2, 3, 4, 5, 6].includes(Number(payload.maxPlayers))
       ? (Number(payload.maxPlayers) as GameSettings["maxPlayers"])
@@ -41,6 +43,7 @@ export async function POST(request: Request) {
       mode: "missioni",
       timeLimitMinutes,
       defense: "automatic",
+      visibility: payload.visibility === "private" ? "private" : "public",
     };
 
     let code = generateCode();
@@ -49,12 +52,13 @@ export async function POST(request: Request) {
     }
     const playerId = `player_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
     const token = createSecretToken();
-    const state = createLobby(code, { id: playerId, name }, settings);
+    const state = createLobby(code, { id: playerId, name: profile.nickname, profileId: profile.id }, settings);
     await insertGame(state, {
       id: playerId,
-      name,
+      name: profile.nickname,
       color: PLAYER_COLORS[0].hex,
       tokenHash: await hashToken(token),
+      profileId: profile.id,
     });
     return Response.json({ code, token, playerId }, { status: 201 });
   } catch (error) {

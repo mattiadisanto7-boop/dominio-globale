@@ -26,8 +26,9 @@ export default function ObjectiveCard({ state, player }: { state: PublicGameStat
         <svg className="objective-map" viewBox={BOARD_VIEW_BOX} aria-label={objective ? `Mappa dell'obiettivo ${objective.number}` : "Obiettivo non ancora assegnato"}>
           <defs>
             <pattern id="objectiveMissingPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-              <rect width="8" height="8" fill="#f5f7f5" />
-              <rect width="2.4" height="8" fill={player.color} fillOpacity=".3" />
+              <rect width="8" height="8" fill="#ffffff" />
+              <rect width="8" height="8" fill={player.color} fillOpacity=".2" />
+              <rect width="2.4" height="8" fill={player.color} fillOpacity=".24" />
             </pattern>
             <pattern id="objectiveSecuredPattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
               <rect width="8" height="8" fill={player.color} />

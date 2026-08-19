@@ -39,6 +39,7 @@ export type PlayerStats = {
 export type GamePlayer = {
   id: string;
   name: string;
+  profileId?: string;
   isBot?: boolean;
   colorId: string;
   color: string;
@@ -133,6 +134,7 @@ export type GameSettings = {
   mode: GameMode;
   timeLimitMinutes: 0 | 45 | 60 | 90;
   defense: "automatic" | "interactive";
+  visibility?: "public" | "private";
 };
 
 export type GameState = {
@@ -141,6 +143,7 @@ export type GameState = {
   phase: GamePhase;
   settings: GameSettings;
   createdAt: number;
+  matchId?: string;
   startedAt?: number;
   deadlineAt?: number;
   timedEndgame?: TimedEndgameState;
@@ -170,7 +173,7 @@ export type GameState = {
   victoryReason?: string;
 };
 
-export type PublicPlayer = Omit<GamePlayer, "cards" | "objective"> & {
+export type PublicPlayer = Omit<GamePlayer, "cards" | "objective" | "profileId"> & {
   cards: TerritoryCard[];
   cardCount: number;
   objective?: Objective;
@@ -185,6 +188,8 @@ export type PublicGameState = Omit<GameState, "players" | "deck" | "discard"> & 
 export type RoomEnvelope = {
   version: number;
   meId: string;
+  role: "player" | "spectator";
+  spectatorCount: number;
   state: PublicGameState;
 };
 

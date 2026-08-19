@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Brand from "@/components/Brand";
 import GameRoom from "@/components/GameRoom";
 import HomeScreen from "@/components/HomeScreen";
+import type { AccountEnvelope, PublicProfile } from "@/lib/community-types";
 import type { RoomEnvelope } from "@/lib/game-types";
 
 const TOKEN_PREFIX = "dominio-globale:token:";
+const ACCOUNT_TOKEN_KEY = "dominio-globale:account-token";
 const cleanCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
 const readError = (payload: unknown, fallback: string) => payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string" ? payload.error : fallback;
 
@@ -17,6 +19,7 @@ function LoadingRoom() {
 export default function DominioApp() {
   const [roomCode, setRoomCode] = useState(""), [token, setToken] = useState("");
   const [envelope, setEnvelope] = useState<RoomEnvelope>(), [initializing, setInitializing] = useState(true), [fatalError, setFatalError] = useState("");
+  const [accountToken, setAccountToken] = useState(""), [profile, setProfile] = useState<PublicProfile>();
 
   const enterRoom = useCallback((code: string, nextToken: string) => {
     const normalized = cleanCode(code);
@@ -26,10 +29,28 @@ export default function DominioApp() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const timer = window.setTimeout(async () => {
       const code = cleanCode(new URLSearchParams(window.location.search).get("stanza") ?? "");
+      const savedAccountToken = localStorage.getItem(ACCOUNT_TOKEN_KEY) ?? "";
       setRoomCode(code);
       setToken(code ? localStorage.getItem(`${TOKEN_PREFIX}${code}`) ?? "" : "");
+      setAccountToken(savedAccountToken);
+      if (savedAccountToken) {
+        try {
+          const response = await fetch("/api/account", {
+            headers: { authorization: `Bearer ${savedAccountToken}` },
+            cache: "no-store",
+          });
+          const payload = (await response.json()) as { profile?: PublicProfile };
+          if (response.ok && payload.profile) setProfile(payload.profile);
+          else {
+            localStorage.removeItem(ACCOUNT_TOKEN_KEY);
+            setAccountToken("");
+          }
+        } catch {
+          // Una temporanea assenza di rete non invalida la sessione locale.
+        }
+      }
       setInitializing(false);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -49,9 +70,28 @@ export default function DominioApp() {
     setRoomCode(""); setToken(""); setEnvelope(undefined); setFatalError("");
   };
 
+  const authenticate = (account: AccountEnvelope) => {
+    localStorage.setItem(ACCOUNT_TOKEN_KEY, account.token);
+    setAccountToken(account.token);
+    setProfile(account.profile);
+  };
+
+  const logout = () => {
+    if (accountToken) {
+      void fetch("/api/account", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${accountToken}` },
+        body: JSON.stringify({ intent: "logout" }),
+      });
+    }
+    localStorage.removeItem(ACCOUNT_TOKEN_KEY);
+    setAccountToken("");
+    setProfile(undefined);
+  };
+
   if (initializing || (roomCode && token && !envelope && !fatalError)) return <LoadingRoom />;
   if (fatalError) return <main className="loading-screen error-screen"><Brand /><h1>Non riesco ad aprire la sala</h1><p>{fatalError}</p><button className="primary-button" onClick={() => { localStorage.removeItem(`${TOKEN_PREFIX}${roomCode}`); setToken(""); setFatalError(""); }}>Entra di nuovo con il codice</button><button className="text-button" onClick={leave}>Torna al menu</button></main>;
-  if (roomCode && !token) return <HomeScreen initialCode={roomCode} onEnter={enterRoom} />;
+  if (roomCode && !token) return <HomeScreen initialCode={roomCode} onEnter={enterRoom} accountToken={accountToken} profile={profile} onAuthenticate={authenticate} onLogout={logout} />;
   if (envelope && token) return <GameRoom envelope={envelope} onEnvelope={setEnvelope} token={token} onLeave={leave} />;
-  return <HomeScreen initialCode="" onEnter={enterRoom} />;
+  return <HomeScreen initialCode="" onEnter={enterRoom} accountToken={accountToken} profile={profile} onAuthenticate={authenticate} onLogout={logout} />;
 }

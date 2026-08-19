@@ -8,7 +8,10 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 
 ## Funzioni principali
 
-- stanze private con codice di sei caratteri;
+- registrazione con nickname unico e password, sessione persistente sul browser e profilo personale;
+- lobby globale con giocatori online, stanze pubbliche visibili in home e ingresso con un solo clic, più stanze private protette dal codice di sei caratteri;
+- modalità spettatore per le partite pubbliche già iniziate, con aggiornamento live e filtraggio server-side di carte, pescate e obiettivi personali;
+- classifica generale con rating, partite, vittorie, percentuale, conquiste, armate eliminate e miglior punteggio obiettivo;
 - sincronizzazione online, riconnessione e salvataggio persistente;
 - tabellone vettoriale realistico con 42 territori cliccabili, rotte marittime e pedine a forma di carro armato colorato con conteggio delle armate;
 - esclusivamente le 16 carte-obiettivo grafiche Challenge, tutte connesse e da 86 punti, disegnate con le stesse sagome reali del tabellone;
@@ -60,7 +63,7 @@ git push -u origin main
 
 Non devi impostare manualmente `DATABASE_URL`: il Blueprint collega il database in automatico. Le tabelle vengono create alla prima richiesta.
 
-> Il piano gratuito di Render è adatto alle prove, ma il database PostgreSQL gratuito scade dopo 30 giorni. Per conservare le partite più a lungo, passa il database a un piano persistente prima della scadenza.
+> Account, classifica e partite dipendono dal database PostgreSQL. Scegli su Render un piano con la durata e la persistenza adatte al tuo utilizzo e verifica i termini mostrati nella Dashboard al momento della pubblicazione.
 
 ## Avvio sul computer
 
@@ -91,8 +94,10 @@ npm run start      # avvio della build
 
 ## Note tecniche
 
-- Le credenziali delle stanze restano nel `localStorage` del browser.
-- Sul server vengono salvati solo gli hash SHA-256 dei token di accesso.
+- Le sessioni dell'account e le credenziali delle stanze restano nel `localStorage` del browser per consentire accesso e riconnessione.
+- Le password vengono derivate con `scrypt` e sale casuale; sul server non viene salvata la password originale. Dei token di accesso viene conservato solo l'hash SHA-256.
+- Le statistiche di una partita conclusa vengono registrate una sola volta tramite un identificatore univoco della partita, anche in caso di richieste ripetute.
+- Gli spettatori ricevono una copia sanificata dello stato: non contiene carte, ultima pescata, obiettivi o identificatori interni dei profili.
 - Gli aggiornamenti usano un numero di versione per evitare sovrascritture concorrenti.
 - Gli effetti audio non richiedono file esterni: sono generati in tempo reale con Web Audio e possono essere disattivati.
 - Il tabellone SVG e la geometria territoriale estratta seguono la licenza CC BY-SA 3.0 indicata in `NOTICE.md`; il resto del codice rimane sotto la licenza del progetto.

@@ -125,7 +125,7 @@ const createDeck = (): TerritoryCard[] => {
 
 export const createLobby = (
   code: string,
-  host: { id: string; name: string },
+  host: { id: string; name: string; profileId?: string },
   settings: GameSettings,
 ): GameState => ({
   code,
@@ -140,6 +140,7 @@ export const createLobby = (
     {
       id: host.id,
       name: host.name,
+      profileId: host.profileId,
       colorId: PLAYER_COLORS[0].id,
       color: PLAYER_COLORS[0].hex,
       status: "active",
@@ -168,7 +169,7 @@ export const createLobby = (
   messages: [],
 });
 
-export const addLobbyPlayer = (state: GameState, player: { id: string; name: string }) => {
+export const addLobbyPlayer = (state: GameState, player: { id: string; name: string; profileId?: string }) => {
   assertRule(state.phase === "lobby", "La partita è già iniziata.");
   assertRule(state.players.length < state.settings.maxPlayers, "La sala è al completo.");
   assertRule(
@@ -181,6 +182,7 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
   state.players.push({
     id: player.id,
     name: player.name,
+    profileId: player.profileId,
     colorId: color.id,
     color: color.hex,
     status: "active",
@@ -233,6 +235,7 @@ const initializeGame = (state: GameState) => {
   state.turnOrder = shuffle(players.map((player) => player.id));
   state.turnIndex = 0;
   state.round = 1;
+  state.matchId = makeId("match");
   state.currentPlayerId = state.turnOrder[0];
   state.phase = "setup";
   state.startedAt = undefined;
@@ -892,7 +895,9 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule([2, 3, 4, 5, 6].includes(next.maxPlayers), "Numero di giocatori non valido.");
     assertRule(next.maxPlayers >= state.players.length, "Il limite è inferiore ai giocatori presenti.");
     assertRule([0, 45, 60, 90].includes(next.timeLimitMinutes), "Durata non valida.");
+    assertRule(!next.visibility || ["public", "private"].includes(next.visibility), "Visibilità non valida.");
     next.mode = "missioni";
+    next.visibility = next.visibility ?? "private";
     state.settings = next;
     logItem(state, `${actor.name} ha aggiornato le regole della sala.`);
     return state;
@@ -1164,17 +1169,21 @@ export const sanitizeState = (state: GameState, meId: string): PublicGameState =
   normalizeRuntimeState(normalized);
   normalizeSetupTurn(normalized);
   const { deck, discard, ...publicState } = normalized;
-  const revealAll = normalized.phase === "gameover";
+  const revealAll = normalized.phase === "gameover" && normalized.players.some((player) => player.id === meId);
   return {
     ...publicState,
-    players: normalized.players.map((player) => ({
-      ...structuredClone(player),
-      cards: player.id === meId || revealAll ? structuredClone(player.cards) : [],
-      cardCount: player.cards.length,
-      lastDrawnCard: player.id === meId ? structuredClone(player.lastDrawnCard) : undefined,
-      lastDrawnAt: player.id === meId ? player.lastDrawnAt : undefined,
-      objective: player.id === meId || revealAll ? structuredClone(player.objective) : undefined,
-    })),
+    players: normalized.players.map((player) => {
+      const publicPlayer = structuredClone(player);
+      delete publicPlayer.profileId;
+      return {
+        ...publicPlayer,
+        cards: player.id === meId || revealAll ? structuredClone(player.cards) : [],
+        cardCount: player.cards.length,
+        lastDrawnCard: player.id === meId ? structuredClone(player.lastDrawnCard) : undefined,
+        lastDrawnAt: player.id === meId ? player.lastDrawnAt : undefined,
+        objective: player.id === meId || revealAll ? structuredClone(player.objective) : undefined,
+      };
+    }),
     deckCount: deck.length,
     discardCount: discard.length,
   };

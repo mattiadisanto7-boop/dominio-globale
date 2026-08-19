@@ -44,7 +44,13 @@ function formatTime(milliseconds: number) {
   return `${hours ? `${hours}:` : ""}${String(minutes).padStart(hours ? 2 : 1, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function instruction(state: PublicGameState, meId: string) {
+function instruction(state: PublicGameState, meId: string, spectator = false) {
+  if (spectator) {
+    const current = state.players.find((player) => player.id === state.currentPlayerId);
+    return state.phase === "gameover"
+      ? "La campagna è terminata: consulta il risultato e il registro completo."
+      : `Diretta pubblica · ${current?.name ?? "il server"} sta giocando la fase ${PHASE_LABELS[state.phase].toLowerCase()}.`;
+  }
   const mine = state.currentPlayerId === meId;
   if (state.phase === "setup") {
     const current = state.players.find((player) => player.id === state.currentPlayerId);
@@ -195,7 +201,8 @@ function ChatDrawer({ state, meId, action }: { state: PublicGameState; meId: str
 
 export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { envelope: RoomEnvelope; onEnvelope: (value: RoomEnvelope) => void; token: string; onLeave: () => void }) {
   const { state, meId } = envelope;
-  const me = state.players.find((player) => player.id === meId)!;
+  const me = state.players.find((player) => player.id === meId);
+  const isSpectator = envelope.role === "spectator";
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [selectedFrom, setSelectedFrom] = useState<TerritoryId>(), [selectedTo, setSelectedTo] = useState<TerritoryId>();
   const [deployAmount, setDeployAmount] = useState(1);
@@ -209,7 +216,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     currentPlayerId: state.currentPlayerId,
     phase: state.phase,
     messageCount: state.messages.length,
-    myCardCount: me.cardCount,
+    myCardCount: me?.cardCount ?? 0,
   });
 
   useEffect(() => {
@@ -229,7 +236,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       state.lastSuddenDeath?.at && state.lastSuddenDeath.at !== previous.suddenDeathAt,
     );
     if (suddenDeathChanged) gameSound.play(state.lastSuddenDeath?.skipped ? "turn" : "sdadata");
-    const drewCard = me.cardCount > previous.myCardCount;
+    const drewCard = (me?.cardCount ?? 0) > previous.myCardCount;
     if (drewCard) gameSound.play("cards");
     if (state.phase === "gameover" && previous.phase !== "gameover") {
       timers.push(window.setTimeout(() => gameSound.play("victory"), suddenDeathChanged ? 2600 : 360));
@@ -247,10 +254,10 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       currentPlayerId: state.currentPlayerId,
       phase: state.phase,
       messageCount: state.messages.length,
-      myCardCount: me.cardCount,
+      myCardCount: me?.cardCount ?? 0,
     };
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [me.cardCount, meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.lastContinentConquest?.at, state.lastSuddenDeath?.at, state.lastSuddenDeath?.skipped, state.messages, state.pendingBattle?.createdAt, state.phase]);
+  }, [me?.cardCount, meId, state.currentPlayerId, state.lastBattle?.at, state.lastBattle?.conquered, state.lastContinentConquest?.at, state.lastSuddenDeath?.at, state.lastSuddenDeath?.skipped, state.messages, state.pendingBattle?.createdAt, state.phase]);
 
   const load = useCallback(async (silent = true) => {
     if (loading.current) return; loading.current = true;
@@ -275,7 +282,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     return () => { window.clearInterval(poll); window.clearInterval(clock); window.removeEventListener("focus", focus); };
   }, [load]);
   const action = useCallback(async (gameAction: GameAction) => {
-    if (busy) return; setBusy(true); setError("");
+    if (busy || isSpectator) return; setBusy(true); setError("");
     try {
       const response = await fetch(`/api/rooms/${state.code}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ intent: "action", version: envelope.version, action: gameAction }) });
       const payload = (await response.json()) as RoomEnvelope & { error?: string };
@@ -299,12 +306,13 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       }
     }
     finally { setBusy(false); }
-  }, [busy, envelope.version, load, onEnvelope, state.code, state.currentPlayerId, state.phase, token]);
+  }, [busy, envelope.version, isSpectator, load, onEnvelope, state.code, state.currentPlayerId, state.phase, token]);
 
   const currentPlayer = state.players.find((player) => player.id === state.currentPlayerId);
   useEffect(() => {
     if (
       !currentPlayer?.isBot ||
+      isSpectator ||
       busy ||
       state.phase === "lobby" ||
       state.phase === "gameover"
@@ -319,11 +327,12 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
           : 900;
     const timer = window.setTimeout(() => void action({ type: "advanceBot" }), delay);
     return () => window.clearTimeout(timer);
-  }, [action, busy, currentPlayer?.isBot, state.lastBattle?.at, state.pendingMove, state.phase]);
+  }, [action, busy, currentPlayer?.isBot, isSpectator, state.lastBattle?.at, state.pendingMove, state.phase]);
 
   const onTerritory = (id: TerritoryId) => {
+    if (isSpectator || !me) return;
     gameSound.play("ui");
-    const territory = state.territories[id], me = state.players.find((player) => player.id === meId)!;
+    const territory = state.territories[id];
     if (state.phase === "setup" && state.currentPlayerId === meId && territory.ownerId === meId && me.setupPool > 0) { action({ type: "placeSetup", territoryId: id }); return; }
     if (state.currentPlayerId !== meId || busy) return;
     if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0 && me.cardCount < 5) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
@@ -386,30 +395,30 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
 
   return (
     <main className="game-shell">
-      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={timedStage && timedStage !== "running" ? "expired endgame" : ""}><small>{timerLabel}</small><b>{timerValue}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
-        {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{state.phase !== "gameover" && <button className="danger-text" onClick={() => action({ type: "resign" })}>Abbandona la partita</button>}<button onClick={onLeave}>Torna al menu</button></div>}
+      <header className="game-topbar"><Brand compact /><div className="game-statusline"><span><small>FASE</small><b>{PHASE_LABELS[state.phase]}</b></span><span><small>ROUND</small><b>{state.round || "—"}</b></span>{remaining !== undefined && <span className={timedStage && timedStage !== "running" ? "expired endgame" : ""}><small>{timerLabel}</small><b>{timerValue}</b></span>}{(isSpectator || envelope.spectatorCount > 0) && <span className="spectator-top-chip"><small>{isSpectator ? "DIRETTA" : "SPETTATORI"}</small><b>{isSpectator ? "◉ LIVE" : envelope.spectatorCount}</b></span>}<button className="room-chip" onClick={() => { gameSound.play("ui"); navigator.clipboard.writeText(state.code); }}><small>SALA</small><b>{state.code}</b></button></div><SoundControl /><button className="menu-button" onClick={() => { gameSound.play("ui"); setMenuOpen((value) => !value); }}>•••</button>
+        {menuOpen && <div className="game-menu"><button onClick={() => load(false)}>Sincronizza ora</button>{!isSpectator && state.phase !== "gameover" && <button className="danger-text" onClick={() => action({ type: "resign" })}>Abbandona la partita</button>}<button onClick={onLeave}>Torna al menu</button></div>}
       </header>
       <PlayerStrip state={state} meId={meId} />
       <div className="game-layout">
         <section className="board-column">
-          <div className="board-heading"><div><span className="live-dot" /> {instruction(state, meId)}</div><div className="continent-bonuses">{(Object.keys(CONTINENTS) as ContinentId[]).map((id) => <span key={id} style={{ "--continent-color": CONTINENTS[id].color } as React.CSSProperties}>{CONTINENTS[id].name} +{CONTINENTS[id].bonus}</span>)}</div></div>
+          <div className="board-heading"><div><span className="live-dot" /> {instruction(state, meId, isSpectator)}</div><div className="continent-bonuses">{(Object.keys(CONTINENTS) as ContinentId[]).map((id) => <span key={id} style={{ "--continent-color": CONTINENTS[id].color } as React.CSSProperties}>{CONTINENTS[id].name} +{CONTINENTS[id].bonus}</span>)}</div></div>
           <div className="board-stage"><WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} /><DiceArena state={state} /></div>
           {state.lastBattle && <div className="last-battle"><span>ULTIMO LANCIO</span><b>{TERRITORY_BY_ID[state.lastBattle.from].short} → {TERRITORY_BY_ID[state.lastBattle.to].short}</b><GraphicDiceRow values={state.lastBattle.attackerDice} tone="attack" /><GraphicDiceRow values={state.lastBattle.defenderDice} tone="defense" /><small>{state.lastBattle.attackerLosses} perdite attacco · {state.lastBattle.defenderLosses} difesa</small></div>}
           <div className="under-board-grid activity-only"><ActivityLog state={state} /></div>
         </section>
         <aside className="control-column">
-          <CardsVault state={state} player={me} />
-          <DrawnCardPanel player={me} />
+          {me && <CardsVault state={state} player={me} />}
+          {me && <DrawnCardPanel player={me} />}
           <TimedEndgamePanel state={state} remaining={remaining} />
           <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />
           {error && <div className="game-error" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         </aside>
       </div>
-      <section className="bottom-objective" aria-label="La tua carta obiettivo"><ObjectiveCard state={state} player={me} /></section>
-      <ConquestOverlay state={state} meId={meId} action={action} busy={busy} />
+      {me ? <section className="bottom-objective" aria-label="La tua carta obiettivo"><ObjectiveCard state={state} player={me} /></section> : <section className="spectator-privacy"><span>◉</span><div><b>Visione pubblica protetta</b><small>Carte e obiettivi personali non vengono trasmessi agli spettatori.</small></div></section>}
+      {!isSpectator && <ConquestOverlay state={state} meId={meId} action={action} busy={busy} />}
       <ContinentCelebration state={state} />
       <SuddenDeathOverlay state={state} />
-      <ChatDrawer state={state} meId={meId} action={action} />
+      {!isSpectator && <ChatDrawer state={state} meId={meId} action={action} />}
     </main>
   );
 }

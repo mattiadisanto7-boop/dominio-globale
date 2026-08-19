@@ -55,12 +55,13 @@ const gameData = (await loadModule(path.join(root, "lib/game-data.ts"))).namespa
 const { createLobby, addLobbyPlayer, applyGameAction, sanitizeState } = engine;
 const { TERRITORIES, attackDiceForArmies, defenseDiceForArmies } = gameData;
 
-const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 90, defense: "automatic" };
-let state = createLobby("TEST42", { id: "alpha", name: "Alpha" }, settings);
-addLobbyPlayer(state, { id: "bravo", name: "Bravo" });
+const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 90, defense: "automatic", visibility: "public" };
+let state = createLobby("TEST42", { id: "alpha", name: "Alpha", profileId: "profile_alpha" }, settings);
+addLobbyPlayer(state, { id: "bravo", name: "Bravo", profileId: "profile_bravo" });
 state = applyGameAction(state, "alpha", { type: "startGame" });
 
 assert(state.phase === "setup", "La partita deve iniziare dallo schieramento.");
+assert(Boolean(state.matchId), "Ogni nuova partita deve avere un identificatore univoco per le statistiche.");
 assert(Boolean(state.currentPlayerId), "Lo schieramento deve avere un giocatore corrente.");
 assert(!state.startedAt && !state.deadlineAt, "Il timer non deve partire prima dello schieramento iniziale completo.");
 const legacySetup = structuredClone(state);
@@ -148,10 +149,13 @@ assert(drawer.cards.length === beforeCards + 1, "La conquista deve assegnare una
 assert(Boolean(drawer.lastDrawnCard), "La carta appena pescata deve essere ricordata.");
 const privateView = sanitizeState(state, attackerId).players.find((player) => player.id === attackerId);
 const opponentView = sanitizeState(state, state.currentPlayerId).players.find((player) => player.id === attackerId);
+const spectatorView = sanitizeState(state, "__spectator__");
 assert(privateView.lastDrawnCard?.id === drawer.lastDrawnCard.id, "Chi pesca deve vedere la propria ultima carta anche nel turno seguente.");
 assert(privateView.cards.length === drawer.cards.length, "Il proprietario deve poter consultare tutte le proprie carte in ogni turno.");
 assert(!opponentView.lastDrawnCard, "L'ultima carta pescata non deve essere rivelata agli avversari.");
 assert(opponentView.cards.length === 0, "Il contenuto del mazzo deve restare segreto agli avversari.");
+assert(spectatorView.players.every((player) => player.cards.length === 0 && !player.objective && !player.lastDrawnCard), "La vista spettatore non deve contenere carte, pescate o obiettivi privati.");
+assert(spectatorView.players.every((player) => !("profileId" in player)), "Gli identificatori interni dei profili non devono essere inviati ai client.");
 
 const garrison = structuredClone(state);
 const garrisonPlayerId = garrison.currentPlayerId;
@@ -188,8 +192,8 @@ for (let attempt = 0; attempt < 80 && !continentGame.pendingMove; attempt += 1) 
 assert(continentGame.pendingMove, "Il test di conquista continentale non ha conquistato l'Indonesia.");
 assert(continentGame.lastContinentConquest?.continent === "oceania", "La conquista dell'Oceania deve generare l'evento celebrativo.");
 assert(
-  continentGame.territories.siam.armies - continentGame.pendingMove.max >= 2 || continentGame.pendingMove.forcedException,
-  "L'occupazione deve conservare 2 armate sul confine, salvo spostamento minimo obbligatorio.",
+  continentGame.territories.siam.armies - continentGame.pendingMove.max >= continentGame.pendingMove.sourceMinimum || continentGame.pendingMove.forcedException,
+  "L'occupazione deve conservare il presidio richiesto, salvo spostamento minimo obbligatorio.",
 );
 
 let timed = structuredClone(state);
@@ -223,8 +227,11 @@ const finished = structuredClone(state);
 finished.phase = "gameover";
 finished.winnerId = "alpha";
 finished.players.find((player) => player.id === "bravo").status = "eliminated";
+const finishedSpectator = sanitizeState(finished, "__spectator__");
+assert(finishedSpectator.players.every((player) => player.cards.length === 0 && !player.objective), "Anche a partita conclusa la vista spettatore deve restare priva di informazioni private.");
 const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
 assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
+assert(rematch.matchId !== finished.matchId, "La rivincita deve avere un nuovo identificatore statistico.");
 
 let botGame = createLobby("BOT004", { id: "human_a", name: "Human A" }, {
   maxPlayers: 4,

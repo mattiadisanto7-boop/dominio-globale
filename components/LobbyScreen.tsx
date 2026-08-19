@@ -18,6 +18,7 @@ export default function LobbyScreen({
 }) {
   const { state, meId } = envelope;
   const isHost = state.hostId === meId;
+  const isPublic = state.settings.visibility !== "private";
 
   const copyInvite = async () => {
     const url = `${window.location.origin}${window.location.pathname}?stanza=${state.code}`;
@@ -37,9 +38,9 @@ export default function LobbyScreen({
       <header className="game-topbar lobby-topbar"><Brand compact /><div className="topbar-actions"><SoundControl /><button className="ghost-button" onClick={onLeave}>Torna al menu</button></div></header>
       <div className="lobby-layout">
         <section className="lobby-main">
-          <span className="eyebrow"><i /> Sala privata pronta</span>
+          <span className="eyebrow"><i /> Sala {isPublic ? "pubblica" : "privata"} pronta</span>
           <h1>Raduna i tuoi strateghi.</h1>
-          <p>Condividi il codice. La partita inizierà soltanto quando deciderà chi ospita.</p>
+          <p>{isPublic ? "La stanza è visibile nella lobby globale: chi è online può entrare con un clic." : "Condividi il codice: soltanto chi lo conosce può entrare."} La partita inizierà soltanto quando deciderà chi ospita.</p>
           <button className="invite-code" onClick={copyInvite}><small>CODICE SALA</small><strong>{state.code}</strong><span>Copia invito</span></button>
           <div className="player-slots">
             {Array.from({ length: state.settings.maxPlayers }).map((_, index) => {
@@ -51,7 +52,7 @@ export default function LobbyScreen({
                   {isHost && player.id !== meId && <button aria-label={`Rimuovi ${player.name}`} onClick={() => action({ type: "kickPlayer", playerId: player.id })}>×</button>}
                 </article>
               ) : (
-                <article className="lobby-player empty" key={index}><span className="player-avatar">+</span><div><b>Posto libero</b><small>In attesa del codice</small></div></article>
+                <article className="lobby-player empty" key={index}><span className="player-avatar">+</span><div><b>Posto libero</b><small>{isPublic ? "Visibile nella lobby globale" : "In attesa del codice"}</small></div></article>
               );
             })}
           </div>
@@ -63,6 +64,7 @@ export default function LobbyScreen({
         </section>
         <aside className="lobby-settings">
           <div className="panel-heading"><span>Regole della campagna</span><small>{isHost ? "Puoi modificarle" : "Scelte da chi ospita"}</small></div>
+          <label className="setting-row"><span><b>Visibilità stanza</b><small>{isPublic ? "Appare nella lobby globale" : "Accesso soltanto tramite codice"}</small></span><select disabled={!isHost} value={state.settings.visibility ?? "private"} onChange={(event) => update("visibility", event.target.value)}><option value="public">Pubblica</option><option value="private">Privata</option></select></label>
           <label className="setting-row"><span><b>Giocatori</b><small>Da 2 a 6 strateghi</small></span><select disabled={!isHost} value={state.settings.maxPlayers} onChange={(event) => update("maxPlayers", Number(event.target.value))}>{[2, 3, 4, 5, 6].map((number) => <option key={number} value={number}>{number}</option>)}</select></label>
           <div className="setting-row fixed"><span><b>Obiettivo Challenge</b><small>Una delle 16 carte grafiche da 86 punti</small></span><span className="status-pill">UFFICIALE</span></div>
           <label className="setting-row"><span><b>Finale Challenge</b><small>Il timer parte finito lo schieramento; poi ultimo giro e sdadata</small></span><select disabled={!isHost} value={state.settings.timeLimitMinutes} onChange={(event) => update("timeLimitMinutes", Number(event.target.value))}><option value={90}>90 min · principale</option><option value={60}>60 minuti</option><option value={45}>45 minuti</option><option value={0}>Disattivato</option></select></label>

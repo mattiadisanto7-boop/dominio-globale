@@ -45,10 +45,23 @@ export default function ActionPanel({
   busy: boolean;
 }) {
   const { state, meId } = envelope;
-  const me = state.players.find((player) => player.id === meId)!;
+  const me = state.players.find((player) => player.id === meId);
   const isTurn = state.currentPlayerId === meId;
   const [fortifyAmount, setFortifyAmount] = useState(1);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
+
+  if (envelope.role === "spectator" || !me) {
+    const current = state.players.find((player) => player.id === state.currentPlayerId);
+    return (
+      <section className="action-panel spectator-panel">
+        <div className="action-kicker">MODALITÀ SPETTATORE · LIVE</div>
+        <span className="spectator-eye">◉</span>
+        <h2>{state.phase === "gameover" ? "Campagna conclusa" : `Turno di ${current?.name ?? "preparazione"}`}</h2>
+        <p>Stai osservando la partita in diretta. Obiettivi, carte e pescate private dei comandanti sono nascosti dal server.</p>
+        <div className="spectator-counter"><b>{envelope.spectatorCount}</b><span>{envelope.spectatorCount === 1 ? "spettatore collegato" : "spettatori collegati"}</span></div>
+      </section>
+    );
+  }
 
   const name = (id?: TerritoryId) => id ? TERRITORY_BY_ID[id].name : "—";
   const maxAttackDice = selectedFrom ? attackDiceForArmies(state.territories[selectedFrom].armies) : 0;
