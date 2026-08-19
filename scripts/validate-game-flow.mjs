@@ -52,6 +52,9 @@ state = applyGameAction(state, "alpha", { type: "startGame" });
 
 assert(state.phase === "setup", "La partita deve iniziare dallo schieramento.");
 assert(Boolean(state.currentPlayerId), "Lo schieramento deve avere un giocatore corrente.");
+const legacySetup = structuredClone(state);
+legacySetup.currentPlayerId = undefined;
+assert(Boolean(sanitizeState(legacySetup, "alpha").currentPlayerId), "Le partite create prima dello schieramento alternato devono essere recuperate automaticamente.");
 
 const firstSetupId = state.currentPlayerId;
 const firstSetupPlayer = state.players.find((player) => player.id === firstSetupId);
@@ -110,4 +113,11 @@ const opponentView = sanitizeState(state, state.currentPlayerId).players.find((p
 assert(privateView.lastDrawnCard?.id === drawer.lastDrawnCard.id, "Chi pesca deve vedere la propria ultima carta anche nel turno seguente.");
 assert(!opponentView.lastDrawnCard, "L'ultima carta pescata non deve essere rivelata agli avversari.");
 
-console.log(`OK · ${setupActions} blocchi alternati · attacco/difesa automatici · carta pescata privata`);
+const finished = structuredClone(state);
+finished.phase = "gameover";
+finished.winnerId = "alpha";
+finished.players.find((player) => player.id === "bravo").status = "eliminated";
+const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
+assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
+
+console.log(`OK · ${setupActions} blocchi alternati · attacco/difesa automatici · carta privata · rivincita`);

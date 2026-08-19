@@ -181,7 +181,9 @@ export const addLobbyPlayer = (state: GameState, player: { id: string; name: str
 const objectiveDefinitions = () => shuffle(TOURNAMENT_OBJECTIVES.map((objective) => structuredClone(objective)));
 
 const initializeGame = (state: GameState) => {
-  const players = state.players.filter((player) => player.status === "active");
+  const players = state.phase === "gameover"
+    ? [...state.players]
+    : state.players.filter((player) => player.status === "active");
   assertRule(players.length >= 2, "Servono almeno 2 giocatori per iniziare.");
   const shuffledTerritories = shuffle(TERRITORIES.map((territory) => territory.id));
   state.territories = emptyTerritories();
@@ -269,9 +271,11 @@ const advanceSetupTurn = (state: GameState) => {
 };
 
 const beginFirstTurn = (state: GameState) => {
-  const firstId = state.turnOrder[0];
+  const firstIndex = state.turnOrder.findIndex((playerId) => playerById(state, playerId).status === "active");
+  assertRule(firstIndex >= 0, "Non ci sono giocatori attivi.");
+  const firstId = state.turnOrder[firstIndex];
   state.currentPlayerId = firstId;
-  state.turnIndex = 0;
+  state.turnIndex = firstIndex;
   state.phase = "reinforce";
   state.reinforcementPool = reinforcementCount(state, firstId);
   logItem(
@@ -279,6 +283,23 @@ const beginFirstTurn = (state: GameState) => {
     `Inizia ${playerName(state, firstId)}: ${state.reinforcementPool} rinforzi disponibili.`,
     "turn",
   );
+};
+
+const normalizeSetupTurn = (state: GameState) => {
+  if (state.phase !== "setup") return;
+  if (allSetupComplete(state)) {
+    beginFirstTurn(state);
+    return;
+  }
+  const current = state.players.find((player) => player.id === state.currentPlayerId);
+  if (current?.status === "active" && current.setupPool > 0) return;
+  const nextIndex = state.turnOrder.findIndex((playerId) => {
+    const player = playerById(state, playerId);
+    return player.status === "active" && player.setupPool > 0;
+  });
+  assertRule(nextIndex >= 0, "Non ci sono schieramenti disponibili.");
+  state.turnIndex = nextIndex;
+  state.currentPlayerId = state.turnOrder[nextIndex];
 };
 
 const drawCard = (state: GameState, player: GamePlayer) => {
@@ -492,6 +513,7 @@ const claimTimeVictory = (state: GameState) => {
 
 export const applyGameAction = (original: GameState, playerId: string, action: GameAction): GameState => {
   const state = structuredClone(original);
+  normalizeSetupTurn(state);
   const actor = playerById(state, playerId);
 
   if (action.type === "sendMessage") {
@@ -745,11 +767,13 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
 };
 
 export const sanitizeState = (state: GameState, meId: string): PublicGameState => {
-  const { deck, discard, ...publicState } = structuredClone(state);
-  const revealAll = state.phase === "gameover";
+  const normalized = structuredClone(state);
+  normalizeSetupTurn(normalized);
+  const { deck, discard, ...publicState } = normalized;
+  const revealAll = normalized.phase === "gameover";
   return {
     ...publicState,
-    players: state.players.map((player) => ({
+    players: normalized.players.map((player) => ({
       ...structuredClone(player),
       cards: player.id === meId || revealAll ? structuredClone(player.cards) : [],
       cardCount: player.cards.length,
