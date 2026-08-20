@@ -5,12 +5,14 @@ import ActionPanel from "@/components/ActionPanel";
 import Brand from "@/components/Brand";
 import CardsVault from "@/components/CardsVault";
 import DiceArena, { GraphicDiceRow } from "@/components/DiceArena";
-import DrawnCardPanel from "@/components/DrawnCardPanel";
 import LobbyScreen from "@/components/LobbyScreen";
+import MatchSummary from "@/components/MatchSummary";
 import ObjectiveCard from "@/components/ObjectiveCard";
 import SoundControl from "@/components/SoundControl";
 import WorldMap from "@/components/WorldMap";
+import { mustTradeCards } from "@/lib/card-rules";
 import { CONTINENTS, TERRITORIES, TERRITORY_BY_ID, canAttackMatchup, type ContinentId, type TerritoryId } from "@/lib/game-data";
+import { TERRITORY_CENTERS } from "@/lib/territory-shapes";
 import { gameSound, type GameSound } from "@/lib/sound-engine";
 import type { GameAction, PublicGameState, RoomEnvelope } from "@/lib/game-types";
 
@@ -22,6 +24,7 @@ const readError = (payload: unknown, fallback: string) => payload && typeof payl
 
 const ACTION_SOUNDS: Partial<Record<GameAction["type"], GameSound>> = {
   updateSettings: "ui",
+  chooseColor: "ui",
   fillWithBots: "turn",
   startGame: "turn",
   kickPlayer: "ui",
@@ -60,7 +63,7 @@ function instruction(state: PublicGameState, meId: string, spectator = false) {
   }
   if (state.phase === "reinforce") {
     const me = state.players.find((player) => player.id === meId);
-    return mine ? me && me.cardCount >= 5 ? "Gioca prima il tris obbligatorio, poi schiera i rinforzi." : "Tocca un tuo territorio per rinforzarlo." : "L'avversario sta schierando i rinforzi.";
+    return mine ? me && mustTradeCards(me.cards) ? "Gioca prima il tris obbligatorio, poi schiera i rinforzi." : "Tocca un tuo territorio per rinforzarlo." : "L'avversario sta schierando i rinforzi.";
   }
   if (state.phase === "attack") return mine ? "Scegli un tuo territorio, poi un bersaglio consentito evidenziato sul confine." : "Osserva la battaglia: i dadi di difesa vengono lanciati automaticamente.";
   if (state.phase === "fortify") return mine ? "Sposta armate o termina il turno." : "L'avversario sta consolidando il dominio.";
@@ -85,8 +88,11 @@ function ActivityLog({ state }: { state: PublicGameState }) {
   return <details className="activity-log"><summary>Registro della campagna <span>{state.log.length}</span></summary><div>{state.log.slice(0, 14).map((item) => <p key={item.id} className={item.kind}><time>{new Date(item.at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</time>{item.text}</p>)}</div></details>;
 }
 
-function ConquestDialog({ move, action, busy }: { move: NonNullable<PublicGameState["pendingMove"]>; action: (action: GameAction) => Promise<void>; busy: boolean }) {
+function ConquestDialog({ state, move, action, busy, onComplete }: { state: PublicGameState; move: NonNullable<PublicGameState["pendingMove"]>; action: (action: GameAction) => Promise<void>; busy: boolean; onComplete: () => void }) {
   const [amount, setAmount] = useState(move.min);
+  const sourceArmies = state.territories[move.from].armies;
+  const destinationArmies = state.territories[move.to].armies;
+  const selectedAmount = Math.min(amount, move.max);
   const garrisonRule = move.forcedException
     ? "L'occupazione minima rende inevitabile lasciare 1 armata nel territorio di partenza: qui si applica l'eccezione automatica."
     : move.sourceMinimum === 2
@@ -95,14 +101,21 @@ function ConquestDialog({ move, action, busy }: { move: NonNullable<PublicGameSt
   return (
     <div className="modal-backdrop battle-backdrop" role="dialog" aria-modal="true" aria-label="Sposta dopo la conquista">
       <div className="conquest-modal"><span className="conquest-icon">⚑</span><span className="eyebrow"><i /> Territorio conquistato</span><h2>{TERRITORY_BY_ID[move.to].name} è tuo</h2><p>Sposta le armate d&apos;occupazione da {TERRITORY_BY_ID[move.from].name}. {garrisonRule}</p>
-        <input className="range-input" type="range" min={move.min} max={move.max} value={Math.min(amount, move.max)} onChange={(event) => setAmount(Number(event.target.value))} /><div className="range-label"><span>{move.min}</span><b>{Math.min(amount, move.max)} armate</b><span>{move.max}</span></div>
-        <button className="primary-button full-button" disabled={busy} onClick={() => action({ type: "moveAfterConquest", amount: Math.min(amount, move.max) })}>Occupa il territorio</button>
+        <div className="conquest-army-preview">
+          <article><small>RIMANGONO IN</small><b>{TERRITORY_BY_ID[move.from].name}</b><span><i className="mini-tank" />{sourceArmies - selectedAmount}</span></article>
+          <strong>→</strong>
+          <article className="destination"><small>ARRIVANO IN</small><b>{TERRITORY_BY_ID[move.to].name}</b><span><i className="mini-tank" />{destinationArmies + selectedAmount}</span></article>
+        </div>
+        <input className="range-input" type="range" min={move.min} max={move.max} value={selectedAmount} onChange={(event) => setAmount(Number(event.target.value))} />
+        <div className="conquest-amount-controls"><button disabled={selectedAmount <= move.min} onClick={() => setAmount((current) => Math.max(move.min, current - 1))}>−</button><div><small>ARMATE DA SPOSTARE</small><b>{selectedAmount}</b></div><button disabled={selectedAmount >= move.max} onClick={() => setAmount((current) => Math.min(move.max, current + 1))}>+</button><button className="max" onClick={() => setAmount(move.max)}>MAX</button></div>
+        <div className="range-label"><span>Min {move.min}</span><b>{selectedAmount} armate</b><span>Max {move.max}</span></div>
+        <button className="primary-button full-button" disabled={busy} onClick={async () => { await action({ type: "moveAfterConquest", amount: selectedAmount }); onComplete(); }}>Conferma occupazione</button>
       </div>
     </div>
   );
 }
 
-function ConquestOverlay({ state, meId, action, busy }: { state: PublicGameState; meId: string; action: (action: GameAction) => Promise<void>; busy: boolean }) {
+function ConquestOverlay({ state, meId, action, busy, onComplete }: { state: PublicGameState; meId: string; action: (action: GameAction) => Promise<void>; busy: boolean; onComplete: () => void }) {
   const move = state.pendingMove;
   const [visibleKey, setVisibleKey] = useState("");
   const moveKey = move ? `${move.from}-${move.to}-${move.min}-${move.max}` : "";
@@ -113,8 +126,54 @@ function ConquestOverlay({ state, meId, action, busy }: { state: PublicGameState
     return () => window.clearTimeout(timer);
   }, [isMyMove, moveKey, state.lastBattle?.conquered]);
   if (!move || move.playerId !== meId || visibleKey !== moveKey) return null;
-  return <ConquestDialog key={`${move.from}-${move.to}-${move.min}-${move.max}`} move={move} action={action} busy={busy} />;
+  return <ConquestDialog key={`${move.from}-${move.to}-${move.min}-${move.max}`} state={state} move={move} action={action} busy={busy} onComplete={onComplete} />;
 }
+
+function TerritoryConquestAnimation({ state }: { state: PublicGameState }) {
+  const initialAt = useRef(state.lastBattle?.at);
+  const [report, setReport] = useState<PublicGameState["lastBattle"]>();
+  useEffect(() => {
+    const next = state.lastBattle;
+    if (!next?.conquered || !next.at || next.at === initialAt.current) return;
+    initialAt.current = next.at;
+    setReport(next);
+    const close = window.setTimeout(() => setReport(undefined), 3150);
+    return () => window.clearTimeout(close);
+  }, [state.lastBattle]);
+  if (!report) return null;
+  const from = TERRITORY_CENTERS[report.from];
+  const to = TERRITORY_CENTERS[report.to];
+  const ownerId = state.territories[report.to].ownerId;
+  const player = state.players.find((item) => item.id === ownerId);
+  const route = `M ${from.x} ${from.y - 5} L ${to.x} ${to.y - 5}`;
+  return (
+    <div className="territory-conquest-animation" role="status" aria-live="assertive" style={{ "--march-color": player?.color ?? "#e3bd68" } as React.CSSProperties}>
+      <svg viewBox="0 0 750 519" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path className="march-route" d={route} />
+        {Array.from({ length: 5 }, (_, index) => (
+          <g className="marching-tank" key={index}>
+            <animateMotion path={route} begin={`${index * 0.16}s`} dur="1.65s" fill="freeze" calcMode="spline" keySplines=".16 .8 .24 1" />
+            <rect x="-9" y="-5" width="18" height="10" rx="3" />
+            <rect className="march-hull" x="-6.5" y="-4" width="13" height="8" rx="2" />
+            <circle cx="1" cy="0" r="3.2" />
+            <path d="M3-1 12-5" />
+          </g>
+        ))}
+        {Array.from({ length: 6 }, (_, index) => <circle className="march-smoke" key={index} cx={to.x + (index - 2.5) * 4} cy={to.y - 8 - (index % 2) * 4} r={3 + (index % 3)} style={{ "--smoke-delay": `${index * 90}ms` } as React.CSSProperties} />)}
+      </svg>
+      <div className="march-banner"><span>⚑ TERRITORIO CONQUISTATO</span><b>{TERRITORY_BY_ID[report.to].name}</b><small>I carri di {player?.name ?? "attacco"} avanzano sul nuovo fronte</small></div>
+    </div>
+  );
+}
+
+const CONTINENT_SCENES: Record<ContinentId, { emblem: string; icons: string[]; title: string; primary: string; secondary: string }> = {
+  "north-america": { emblem: "🦅", icons: ["🦬", "🦅", "🌲", "🦬", "🦅", "🌲"], title: "Le aquile sorvolano il nuovo dominio", primary: "#d88938", secondary: "#f3cb6b" },
+  "south-america": { emblem: "🦜", icons: ["🦜", "🐆", "🌿", "🦜", "🐆", "🌿"], title: "La foresta celebra il suo comandante", primary: "#159987", secondary: "#63d4b4" },
+  europe: { emblem: "🏰", icons: ["🏰", "⚜️", "👑", "🏰", "⚜️", "👑"], title: "Le fortezze alzano i vessilli", primary: "#8c5aa4", secondary: "#d9a4dc" },
+  africa: { emblem: "🦁", icons: ["🦁", "🐘", "🦒", "🦁", "🐘", "🦒"], title: "La savana ruggisce per la vittoria", primary: "#c8782f", secondary: "#f0c15f" },
+  asia: { emblem: "🐉", icons: ["🐉", "🐅", "🏯", "🐉", "🐅", "🏯"], title: "Il drago protegge il nuovo impero", primary: "#588f3d", secondary: "#b6d85f" },
+  oceania: { emblem: "🦘", icons: ["🦘", "🐨", "🌊", "🦘", "🐨", "🦘"], title: "I canguri corrono sul nuovo dominio", primary: "#d54f7d", secondary: "#6bd3df" },
+};
 
 function ContinentCelebration({ state }: { state: PublicGameState }) {
   const initialAt = useRef(state.lastContinentConquest?.at);
@@ -129,14 +188,18 @@ function ContinentCelebration({ state }: { state: PublicGameState }) {
   }, [state.lastContinentConquest]);
   if (!report) return null;
   const continent = CONTINENTS[report.continent];
+  const scene = CONTINENT_SCENES[report.continent];
   const player = state.players.find((item) => item.id === report.playerId);
   return (
-    <div className="continent-celebration" role="status" aria-live="assertive" style={{ "--celebration-color": player?.color ?? continent.color } as React.CSSProperties}>
+    <div className={`continent-celebration scene-${report.continent}`} role="status" aria-live="assertive" style={{ "--celebration-color": player?.color ?? continent.color, "--scene-primary": scene.primary, "--scene-secondary": scene.secondary } as React.CSSProperties}>
       <div className="continent-rays" />
+      <div className="continent-landscape" aria-hidden="true"><i className="scene-sun" /><i className="scene-horizon one" /><i className="scene-horizon two" /></div>
+      <div className="continent-fauna" aria-hidden="true">{scene.icons.map((icon, index) => <span key={`${icon}-${index}`} style={{ "--scene-index": index } as React.CSSProperties}>{icon}</span>)}</div>
       <div className="continent-particles" aria-hidden="true">{Array.from({ length: 28 }, (_, index) => <i key={index} style={{ "--particle-angle": `${index * 12.857}deg`, "--particle-delay": `${index * -31}ms` } as React.CSSProperties} />)}</div>
-      <div className="continent-medal"><span>✦</span><small>DOMINIO CONTINENTALE</small></div>
+      <div className="continent-medal"><span>{scene.emblem}</span><small>DOMINIO CONTINENTALE</small></div>
       <p>{player?.name} ha conquistato</p>
       <h2>{continent.name}</h2>
+      <em className="continent-scene-title">{scene.title}</em>
       <strong>+{continent.bonus} ARMATE A OGNI TURNO</strong>
       <div className="continent-flags"><i /><i /><i /><i /><i /></div>
     </div>
@@ -207,6 +270,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
   const [selectedFrom, setSelectedFrom] = useState<TerritoryId>(), [selectedTo, setSelectedTo] = useState<TerritoryId>();
   const [deployAmount, setDeployAmount] = useState(1);
   const [now, setNow] = useState(0), [menuOpen, setMenuOpen] = useState(false);
+  const [initiallyFinished] = useState(state.phase === "gameover");
   const loading = useRef(false);
   const audioState = useRef({
     pendingAt: state.pendingBattle?.createdAt,
@@ -359,7 +423,7 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
     const territory = state.territories[id];
     if (state.phase === "setup" && state.currentPlayerId === meId && territory.ownerId === meId && me.setupPool > 0) { action({ type: "placeSetup", territoryId: id }); return; }
     if (state.currentPlayerId !== meId || busy) return;
-    if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0 && me.cardCount < 5) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
+    if (state.phase === "reinforce" && territory.ownerId === meId && state.reinforcementPool > 0 && !mustTradeCards(me.cards)) { action({ type: "deploy", territoryId: id, amount: Math.max(1, Math.min(deployAmount, state.reinforcementPool)) }); return; }
     if (state.phase === "attack" && !state.pendingBattle && !state.pendingMove) {
       if (!selectedFrom) {
         if (territory.ownerId === meId && territory.armies > 1) {
@@ -426,22 +490,22 @@ export default function GameRoom({ envelope, onEnvelope, token, onLeave }: { env
       <div className="game-layout">
         <section className="board-column">
           <div className="board-heading"><div><span className="live-dot" /> {instruction(state, meId, isSpectator)}</div><div className="continent-bonuses">{(Object.keys(CONTINENTS) as ContinentId[]).map((id) => <span key={id} style={{ "--continent-color": CONTINENTS[id].color } as React.CSSProperties}>{CONTINENTS[id].name} +{CONTINENTS[id].bonus}</span>)}</div></div>
-          <div className="board-stage"><WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} /><DiceArena state={state} /></div>
+          <div className="board-stage"><WorldMap state={state} meId={meId} selectedFrom={selectedFrom} selectedTo={selectedTo} onTerritory={onTerritory} /><DiceArena state={state} /><TerritoryConquestAnimation state={state} /></div>
           {state.lastBattle && <div className="last-battle"><span>ULTIMO LANCIO</span><b>{TERRITORY_BY_ID[state.lastBattle.from].short} → {TERRITORY_BY_ID[state.lastBattle.to].short}</b><GraphicDiceRow values={state.lastBattle.attackerDice} tone="attack" /><GraphicDiceRow values={state.lastBattle.defenderDice} tone="defense" /><small>{state.lastBattle.attackerLosses} perdite attacco · {state.lastBattle.defenderLosses} difesa</small></div>}
           <div className="under-board-grid activity-only"><ActivityLog state={state} /></div>
         </section>
         <aside className="control-column">
-          {me && <CardsVault state={state} player={me} />}
-          {me && <DrawnCardPanel player={me} />}
+          {me && <CardsVault state={state} player={me} action={action} busy={busy} />}
           <TimedEndgamePanel state={state} remaining={remaining} />
           <ActionPanel envelope={envelope} selectedFrom={selectedFrom} selectedTo={selectedTo} setSelectedFrom={setSelectedFrom} setSelectedTo={setSelectedTo} deployAmount={deployAmount} setDeployAmount={setDeployAmount} action={action} busy={busy} />
           {error && <div className="game-error" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         </aside>
       </div>
       {me ? <section className="bottom-objective" aria-label="La tua carta obiettivo"><ObjectiveCard state={state} player={me} /></section> : <section className="spectator-privacy"><span>◉</span><div><b>Visione pubblica protetta</b><small>Carte e obiettivi personali non vengono trasmessi agli spettatori.</small></div></section>}
-      {!isSpectator && <ConquestOverlay state={state} meId={meId} action={action} busy={busy} />}
+      {!isSpectator && <ConquestOverlay state={state} meId={meId} action={action} busy={busy} onComplete={() => { setSelectedFrom(undefined); setSelectedTo(undefined); }} />}
       <ContinentCelebration state={state} />
       <SuddenDeathOverlay state={state} />
+      {state.phase === "gameover" && <MatchSummary state={state} delayForAnimations={!initiallyFinished} />}
       {!isSpectator && <ChatDrawer state={state} meId={meId} action={action} />}
     </main>
   );

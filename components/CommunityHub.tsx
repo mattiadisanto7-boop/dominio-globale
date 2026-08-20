@@ -101,7 +101,7 @@ export default function CommunityHub({
                 <article key={player.id} className={player.id === profileId ? "me" : ""}>
                   <span className="online-avatar">{player.nickname.slice(0, 1).toUpperCase()}<i /></span>
                   <div><b>{player.nickname}{player.id === profileId ? " · tu" : ""}</b><small>{PRESENCE_LABELS[player.presence]}</small></div>
-                  <span className="online-actions"><em>{player.rating}</em>{friendControl(player.id)}</span>
+                  <span className="online-actions"><em>{player.rating} PD</em>{friendControl(player.id)}</span>
                 </article>
               ))}
               {!online.length && <div className="online-empty">Il prossimo comandante online potresti essere tu.</div>}
@@ -112,7 +112,7 @@ export default function CommunityHub({
             <header><span>RETE ALLEATI</span><b className={friends?.incoming.length ? "has-requests" : ""}>{friends?.incoming.length ? `${friends.incoming.length} nuove` : friends?.friends.length ?? 0}</b></header>
             <div className="friends-list">
               {friends?.incoming.map((player) => <article key={`in-${player.id}`} className="friend-request-row"><span className="friend-avatar">{player.nickname.slice(0, 1).toUpperCase()}</span><div><b>{player.nickname}</b><small>Vuole diventare tuo amico</small></div><span className="friend-row-actions"><button disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "accept")}>✓</button><button className="reject" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "reject")}>×</button></span></article>)}
-              {friends?.friends.map((player) => <article key={`friend-${player.id}`}><span className="friend-avatar allied">✓</span><div><b>{player.nickname}</b><small>{player.rating} rating · alleato</small></div><button className="friend-remove" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "remove")}>Rimuovi</button></article>)}
+              {friends?.friends.map((player) => <article key={`friend-${player.id}`}><span className="friend-avatar allied">✓</span><div><b>{player.nickname}</b><small>{player.rating} PD · alleato</small></div><button className="friend-remove" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "remove")}>Rimuovi</button></article>)}
               {friends?.outgoing.map((player) => <article key={`out-${player.id}`}><span className="friend-avatar pending">⌛</span><div><b>{player.nickname}</b><small>Richiesta in attesa</small></div><button className="friend-remove" disabled={friendBusy === player.id} onClick={() => onFriendAction(player.id, "cancel")}>Annulla</button></article>)}
               {friends && !friends.incoming.length && !friends.friends.length && !friends.outgoing.length && <div className="friends-empty"><span>♙</span><b>Crea la tua alleanza</b><small>Invia una richiesta dai giocatori online o dalla classifica.</small></div>}
               {!friends && <div className="friends-empty"><i /><small>Sincronizzazione alleati…</small></div>}
@@ -123,10 +123,11 @@ export default function CommunityHub({
       </div>
 
       <section className="leaderboard-panel">
-        <header><div><span>CLASSIFICA GLOBALE</span><small>Rating, vittorie e statistiche di tutte le campagne registrate</small></div>{myRank >= 0 && <b>LA TUA POSIZIONE · #{myRank + 1}</b>}</header>
+        <header><div><span>CLASSIFICA GLOBALE</span><small>Punti Dominio cumulativi da 0: premiano vittorie, obiettivi e risultati sul campo</small></div>{myRank >= 0 && <b>LA TUA POSIZIONE · #{myRank + 1}</b>}</header>
+        <div className="dominion-score-key"><span><b>Base 100</b> vincitore</span><span><b>Base 20</b> altri giocatori</span><span><b>+1</b> per punto obiettivo</span><span><b>+2</b> per conquista</span><span><b>+1</b> ogni 3 armate eliminate</span><span><b>+3</b> per tris</span></div>
         <div className="leaderboard-scroll">
           <table>
-            <thead><tr><th>#</th><th>Comandante</th><th>Rating</th><th>Partite</th><th>Vittorie</th><th>% vittorie</th><th>Conquiste</th><th>Armate eliminate</th><th>Miglior obiettivo</th><th>Relazione</th></tr></thead>
+            <thead><tr><th>#</th><th>Comandante</th><th>Punti Dominio</th><th>Partite</th><th>Vittorie</th><th>% vittorie</th><th>Conquiste</th><th>Armate eliminate</th><th>Miglior obiettivo</th><th>Relazione</th></tr></thead>
             <tbody>
               {leaderboard.slice(0, 20).map((player, index) => (
                 <tr key={player.id} className={player.id === profileId ? "me" : ""}>

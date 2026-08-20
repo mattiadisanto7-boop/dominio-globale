@@ -197,6 +197,7 @@ export type RoomEnvelope = {
 
 export type GameAction =
   | { type: "updateSettings"; settings: Partial<GameSettings> }
+  | { type: "chooseColor"; colorId: string }
   | { type: "fillWithBots" }
   | { type: "startGame" }
   | { type: "kickPlayer"; playerId: string }

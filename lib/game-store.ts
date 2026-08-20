@@ -2,6 +2,7 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:cry
 import { promisify } from "node:util";
 import { Pool, type PoolClient } from "pg";
 import { TERRITORY_BY_ID } from "@/lib/game-data";
+import { dominionPointsForPerformance } from "@/lib/scoring";
 import type {
   CommunitySnapshot,
   FriendActionIntent,
@@ -92,7 +93,8 @@ const ensureDatabase = async () => {
           last_seen_at BIGINT NOT NULL,
           presence_status TEXT NOT NULL DEFAULT 'home',
           current_room_code TEXT,
-          rating INTEGER NOT NULL DEFAULT 1000,
+          rating INTEGER NOT NULL DEFAULT 0,
+          scoring_version INTEGER NOT NULL DEFAULT 1,
           games_played INTEGER NOT NULL DEFAULT 0,
           wins INTEGER NOT NULL DEFAULT 0,
           losses INTEGER NOT NULL DEFAULT 0,
@@ -102,6 +104,14 @@ const ensureDatabase = async () => {
           sets_traded INTEGER NOT NULL DEFAULT 0,
           best_objective_score INTEGER NOT NULL DEFAULT 0
         );
+
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS scoring_version INTEGER NOT NULL DEFAULT 0;
+        UPDATE profiles
+           SET rating = GREATEST(0, rating - 1000),
+               scoring_version = 1
+         WHERE scoring_version = 0;
+        ALTER TABLE profiles ALTER COLUMN rating SET DEFAULT 0;
+        ALTER TABLE profiles ALTER COLUMN scoring_version SET DEFAULT 1;
 
         CREATE TABLE IF NOT EXISTS profile_sessions (
           token_hash TEXT PRIMARY KEY,
@@ -633,8 +643,33 @@ export const getActiveSpectatorCount = async (code: string) => {
   return Number(result.rows[0]?.count ?? 0);
 };
 
+const purgeBotOnlyActiveGames = async () => {
+  const botOnlyGames = await database().query<{ code: string }>(
+    `DELETE FROM games g
+      WHERE g.status IN ('lobby', 'setup', 'reinforce', 'attack', 'fortify')
+        AND NOT EXISTS (
+          SELECT 1
+           FROM jsonb_array_elements(COALESCE(g.state -> 'players', '[]'::jsonb)) AS player
+           WHERE COALESCE((player ->> 'isBot')::boolean, false) = false
+             AND COALESCE(player ->> 'status', 'active') = 'active'
+        )
+      RETURNING g.code`,
+  );
+  if (botOnlyGames.rows.length) {
+    await database().query(
+      `UPDATE profiles
+          SET current_room_code = NULL,
+              presence_status = 'home'
+        WHERE current_room_code = ANY($1::text[])`,
+      [botOnlyGames.rows.map((row) => row.code)],
+    );
+  }
+  return botOnlyGames.rows.length;
+};
+
 export const getCommunitySnapshot = async (): Promise<CommunitySnapshot> => {
   await ensureDatabase();
+  await purgeBotOnlyActiveGames();
   const now = Date.now();
   const [games, onlineRows, leaderboardRows] = await Promise.all([
     database().query<{ state: GameState | string; spectators: number | string }>(
@@ -670,11 +705,12 @@ export const getCommunitySnapshot = async (): Promise<CommunitySnapshot> => {
     ),
   ]);
 
-  const rooms: PublicRoomSummary[] = games.rows.map((row) => {
+  const rooms: PublicRoomSummary[] = games.rows.flatMap((row) => {
     const state = typeof row.state === "string" ? (JSON.parse(row.state) as GameState) : row.state;
-    const humans = state.players.filter((player) => !player.isBot).length;
+    const humans = state.players.filter((player) => !player.isBot && player.status === "active").length;
     const bots = state.players.filter((player) => player.isBot).length;
-    return {
+    if (!humans) return [];
+    return [{
       code: state.code,
       hostName: state.players.find((player) => player.id === state.hostId)?.name ?? "Comandante",
       phase: state.phase,
@@ -686,7 +722,7 @@ export const getCommunitySnapshot = async (): Promise<CommunitySnapshot> => {
       spectators: Number(row.spectators),
       createdAt: state.createdAt,
       startedAt: state.startedAt,
-    };
+    }];
   });
   const online: OnlineProfile[] = onlineRows.rows.map((row) => ({
     id: row.id,
@@ -711,9 +747,6 @@ export const recordCompletedGame = async (state: GameState) => {
   const players = state.players.filter((player) => player.profileId || player.abandonedProfileId);
   if (!players.length) return;
   const matchId = state.matchId ?? `legacy_${state.startedAt ?? state.createdAt}`;
-  const winnerIsHuman = players.some((player) => player.id === state.winnerId && !player.abandoned);
-  const winDelta = 32 + Math.max(0, players.length - 2) * 4;
-  const lossDelta = -Math.max(8, Math.floor(winDelta / Math.max(1, players.length - 1)));
   const now = Date.now();
 
   await inTransaction(async (client) => {
@@ -724,7 +757,12 @@ export const recordCompletedGame = async (state: GameState) => {
       const objectiveScore = (player.objective?.territoryIds ?? [])
         .filter((territoryId) => state.territories[territoryId].ownerId === player.id)
         .reduce((sum, territoryId) => sum + TERRITORY_BY_ID[territoryId].value, 0);
-      const ratingDelta = won ? winDelta : winnerIsHuman ? lossDelta : -8;
+      const ratingDelta = dominionPointsForPerformance({
+        won,
+        abandoned: player.abandoned,
+        objectiveScore,
+        stats: player.stats,
+      });
       const inserted = await client.query(
         `INSERT INTO game_results
           (game_code, match_id, profile_id, won, objective_score, rating_delta, recorded_at)
@@ -739,7 +777,7 @@ export const recordCompletedGame = async (state: GameState) => {
             SET games_played = games_played + 1,
                 wins = wins + $1,
                 losses = losses + $2,
-                rating = GREATEST(100, rating + $3),
+                rating = rating + $3,
                 total_attacks = total_attacks + $4,
                 territories_conquered = territories_conquered + $5,
                 armies_defeated = armies_defeated + $6,
@@ -764,5 +802,6 @@ export const recordCompletedGame = async (state: GameState) => {
 
 export const checkDatabase = async () => {
   await ensureDatabase();
+  await purgeBotOnlyActiveGames();
   await database().query("SELECT 1");
 };

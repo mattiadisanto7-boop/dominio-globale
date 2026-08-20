@@ -9,6 +9,7 @@ import {
   type ContinentId,
   type TerritoryId,
 } from "@/lib/game-data";
+import { cardTradeValue as tradeValue, validCardTradeSets as validTradeSets } from "@/lib/card-rules";
 import { TOURNAMENT_OBJECTIVES } from "@/lib/tournament-objectives";
 import type {
   GameAction,
@@ -402,32 +403,6 @@ const drawCard = (state: GameState, player: GamePlayer) => {
     player.lastDrawnAt = Date.now();
     logItem(state, `${player.name} riceve una carta territorio.`, "cards");
   }
-};
-
-const tradeValue = (cards: TerritoryCard[]) => {
-  if (cards.length !== 3) return 0;
-  const wilds = cards.filter((card) => card.symbol === "jolly").length;
-  const symbols = cards.filter((card) => card.symbol !== "jolly").map((card) => card.symbol);
-  if (wilds === 0) {
-    const unique = new Set(symbols);
-    if (unique.size === 3) return 10;
-    if (unique.size === 1) return 8;
-  }
-  if (wilds === 1 && symbols.length === 2 && new Set(symbols).size === 1) return 12;
-  return 0;
-};
-
-export const validTradeSets = (cards: TerritoryCard[]) => {
-  const sets: string[][] = [];
-  for (let a = 0; a < cards.length - 2; a += 1) {
-    for (let b = a + 1; b < cards.length - 1; b += 1) {
-      for (let c = b + 1; c < cards.length; c += 1) {
-        const selection = [cards[a], cards[b], cards[c]];
-        if (tradeValue(selection)) sets.push(selection.map((card) => card.id));
-      }
-    }
-  }
-  return sets;
 };
 
 const beginAttackWhenReady = (state: GameState, player: GamePlayer) => {
@@ -933,6 +908,21 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     return state;
   }
 
+  if (action.type === "chooseColor") {
+    assertRule(state.phase === "lobby", "Puoi scegliere il colore soltanto nella sala d'attesa.");
+    assertRule(!actor.isBot, "I colori dei bot vengono assegnati automaticamente.");
+    const color = PLAYER_COLORS.find((candidate) => candidate.id === action.colorId);
+    assertRule(color, "Colore non disponibile.");
+    const occupiedBy = state.players.find(
+      (player) => player.id !== playerId && player.colorId === color.id,
+    );
+    assertRule(!occupiedBy, `${color.name} è già stato scelto da ${occupiedBy?.name ?? "un altro giocatore"}.`);
+    actor.colorId = color.id;
+    actor.color = color.hex;
+    logItem(state, `${actor.name} sceglie il colore ${color.name}.`);
+    return state;
+  }
+
   if (action.type === "fillWithBots") {
     assertRule(state.phase === "lobby", "I bot possono entrare soltanto prima della partita.");
     assertRule(state.hostId === playerId, "Solo chi ospita può aggiungere i bot.");
@@ -1195,7 +1185,7 @@ export const sanitizeState = (state: GameState, meId: string): PublicGameState =
   normalizeRuntimeState(normalized);
   normalizeSetupTurn(normalized);
   const { deck, discard, ...publicState } = normalized;
-  const revealAll = normalized.phase === "gameover" && normalized.players.some((player) => player.id === meId);
+  const revealAll = normalized.phase === "gameover";
   return {
     ...publicState,
     players: normalized.players.map((player) => {

@@ -18,10 +18,10 @@ function RulesModal({ onClose }: { onClose: () => void }) {
   const steps = [
     ["01", "Schiera", "Ricevi territori casuali. A turno piazzi 3 armate, una per clic e anche su territori differenti; poi il comando passa. Il timer parte soltanto quando tutti hanno finito."],
     ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti. Appena piazzi l'ultima, il gioco passa automaticamente all'attacco."],
-    ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia i dadi massimi; da 2 armate non puoi attaccarne 2+, da 3 non puoi attaccarne 3+. I pareggi favoriscono la difesa."],
+    ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia i dadi massimi; da 2 armate non puoi attaccarne 2+, da 3 non puoi attaccarne 3+. Se il nemico resiste puoi premere Attacca ancora."],
     ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico. Se la partenza confina con un nemico, devono restarvi almeno 2 armate; l'occupazione minima dopo una conquista applica da sola l'eventuale eccezione."],
-    ["05", "Completa la carta", "I territori richiesti usano il tuo colore: pieno se sono già tuoi, chiarissimo se mancano. Il pulsante Carte apre in privato l'intero mazzo che possiedi."],
-    ["06", "Chiudi la campagna", "Puoi riempire i posti liberi con generali bot. Se abbandoni, un bot eredita il tuo esercito; se restano solo bot, la partita si chiude. La modalità principale dura 90 minuti, poi ultimo giro e sdadata."],
+    ["05", "Gestisci le carte", "Le carte mostrano simbolo, sagoma e icona del territorio. Da Le tue carte puoi selezionare e giocare il tris; i territori obiettivo restano evidenziati sulla mappa."],
+    ["06", "Chiudi la campagna", "Se abbandoni, un bot eredita il tuo esercito; se restano solo bot, la partita si chiude. Dopo timer, ultimo giro e sdadata compare il rapporto con punteggi, statistiche e obiettivi di tutti."],
   ];
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Regole del gioco">
@@ -198,7 +198,7 @@ export default function HomeScreen({
   return (
     <main className="landing-shell">
       <div className="landing-aurora landing-aurora-one" /><div className="landing-aurora landing-aurora-two" />
-      <header className="landing-nav"><Brand /><div className="landing-nav-actions">{displayedProfile && <div className="profile-chip"><span>{displayedProfile.nickname.slice(0, 1).toUpperCase()}</span><div><b>{displayedProfile.nickname}</b><small>{displayedProfile.rating} rating</small></div></div>}<SoundControl /><button className="ghost-button" onClick={() => setRulesOpen(true)}>Regole del gioco</button>{profile && <button className="logout-button" onClick={onLogout}>Esci</button>}</div></header>
+      <header className="landing-nav"><Brand /><div className="landing-nav-actions">{displayedProfile && <div className="profile-chip"><span>{displayedProfile.nickname.slice(0, 1).toUpperCase()}</span><div><b>{displayedProfile.nickname}</b><small>{displayedProfile.rating} Punti Dominio</small></div></div>}<SoundControl /><button className="ghost-button" onClick={() => setRulesOpen(true)}>Regole del gioco</button>{profile && <button className="logout-button" onClick={onLogout}>Esci</button>}</div></header>
       <section className="landing-content">
         <div className="hero-copy">
           <span className="eyebrow"><i /> Strategia online · 2–6 giocatori</span>
@@ -221,7 +221,7 @@ export default function HomeScreen({
             </form>
             <div className="secure-note"><span>✓</span> Password protetta · nickname e statistiche persistenti</div>
           </> : <>
-            <div className="welcome-account"><span>{displayedProfile?.nickname.slice(0, 1).toUpperCase()}</span><div><small>COMANDANTE CONNESSO</small><b>{displayedProfile?.nickname}</b><em>{displayedProfile?.rating} rating · {displayedProfile?.wins} vittorie</em></div></div>
+            <div className="welcome-account"><span>{displayedProfile?.nickname.slice(0, 1).toUpperCase()}</span><div><small>COMANDANTE CONNESSO</small><b>{displayedProfile?.nickname}</b><em>{displayedProfile?.rating} Punti Dominio · {displayedProfile?.wins} vittorie</em></div></div>
             <div className="card-tabs" role="tablist" aria-label="Scegli come giocare">
               <button className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>Crea sala</button>
               <button className={tab === "join" ? "active" : ""} onClick={() => setTab("join")}>Entra con codice</button>

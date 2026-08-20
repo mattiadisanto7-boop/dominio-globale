@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import Brand from "@/components/Brand";
 import SoundControl from "@/components/SoundControl";
+import { PLAYER_COLORS } from "@/lib/game-data";
 import type { GameAction, RoomEnvelope } from "@/lib/game-types";
 
 export default function LobbyScreen({
@@ -21,6 +22,7 @@ export default function LobbyScreen({
   const { state, meId } = envelope;
   const isHost = state.hostId === meId;
   const isPublic = state.settings.visibility !== "private";
+  const me = state.players.find((player) => player.id === meId);
 
   const copyInvite = async () => {
     const url = `${window.location.origin}${window.location.pathname}?stanza=${state.code}`;
@@ -58,6 +60,32 @@ export default function LobbyScreen({
               );
             })}
           </div>
+          {me && (
+            <section className="lobby-color-picker" aria-label="Scegli il colore delle tue armate">
+              <div><span>IL TUO COLORE</span><small>Puoi cambiarlo finché la partita non è iniziata</small></div>
+              <div className="color-swatches">
+                {PLAYER_COLORS.map((color) => {
+                  const occupied = state.players.find((player) => player.id !== meId && player.colorId === color.id);
+                  const selected = me.colorId === color.id;
+                  return (
+                    <button
+                      key={color.id}
+                      className={`${selected ? "selected" : ""} ${occupied ? "occupied" : ""}`}
+                      style={{ "--choice-color": color.hex } as CSSProperties}
+                      disabled={busy || Boolean(occupied)}
+                      onClick={() => action({ type: "chooseColor", colorId: color.id })}
+                      title={occupied ? `${color.name} è di ${occupied.name}` : `Scegli ${color.name}`}
+                      aria-label={occupied ? `${color.name}, occupato da ${occupied.name}` : `${color.name}${selected ? ", selezionato" : ""}`}
+                    >
+                      <i />
+                      <span>{color.name}</span>
+                      {selected && <b>✓</b>}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           {isHost && state.players.length < state.settings.maxPlayers && (
             <button className="bot-fill-button" disabled={busy} onClick={() => action({ type: "fillWithBots" })}>
               <span>◆</span><b>Riempi {state.settings.maxPlayers - state.players.length} {state.settings.maxPlayers - state.players.length === 1 ? "posto" : "posti"} con i bot</b><small>Giocano turni completi con le stesse regole</small>

@@ -52,8 +52,15 @@ const assertRuleError = (operation, message) => {
 
 const engine = (await loadModule(path.join(root, "lib/game-engine.ts"))).namespace;
 const gameData = (await loadModule(path.join(root, "lib/game-data.ts"))).namespace;
+const cardRules = (await loadModule(path.join(root, "lib/card-rules.ts"))).namespace;
+const scoring = (await loadModule(path.join(root, "lib/scoring.ts"))).namespace;
 const { createLobby, addLobbyPlayer, applyGameAction, removeLobbyPlayer, sanitizeState } = engine;
 const { TERRITORIES, attackDiceForArmies, defenseDiceForArmies } = gameData;
+const zeroStats = { attacks: 0, victories: 0, territoriesConquered: 0, armiesLost: 0, armiesDefeated: 0, setsTraded: 0 };
+assert(scoring.dominionPointsForPerformance({ won: false, objectiveScore: 0, stats: zeroStats }) === 20, "Il nuovo punteggio deve partire da 0 e assegnare punti soltanto dopo una partita.");
+assert(scoring.dominionPointsForPerformance({ won: true, objectiveScore: 86, stats: zeroStats }) === 186, "Vittoria e obiettivo completo devono produrre il corretto premio in Punti Dominio.");
+assert(cardRules.cardTradeValue([{ id: "a", symbol: "fanteria" }, { id: "b", symbol: "fanteria" }, { id: "c", symbol: "fanteria" }]) === 8, "Il tris di simboli uguali deve valere 8 armate.");
+assert(cardRules.cardTradeValue([{ id: "a", symbol: "fanteria" }, { id: "b", symbol: "fanteria" }, { id: "j", symbol: "jolly" }]) === 12, "La coppia con Jolly deve valere 12 armate.");
 
 const settings = { maxPlayers: 2, mode: "missioni", timeLimitMinutes: 90, defense: "automatic", visibility: "public" };
 let leavingLobby = createLobby("LEAVE1", { id: "host_leave", name: "Host", profileId: "profile_host" }, { ...settings, maxPlayers: 3 });
@@ -66,6 +73,9 @@ assert(leavingLobby.hostId === "next_host" && leavingLobby.players.length === 1,
 
 let state = createLobby("TEST42", { id: "alpha", name: "Alpha", profileId: "profile_alpha" }, settings);
 addLobbyPlayer(state, { id: "bravo", name: "Bravo", profileId: "profile_bravo" });
+state = applyGameAction(state, "alpha", { type: "chooseColor", colorId: "ambra" });
+assert(state.players.find((player) => player.id === "alpha").colorId === "ambra", "Ogni giocatore deve poter scegliere un colore libero nella lobby.");
+assertRuleError(() => applyGameAction(state, "bravo", { type: "chooseColor", colorId: "ambra" }), "Due giocatori non possono scegliere lo stesso colore.");
 state = applyGameAction(state, "alpha", { type: "startGame" });
 
 assert(state.phase === "setup", "La partita deve iniziare dallo schieramento.");
@@ -236,7 +246,7 @@ finished.phase = "gameover";
 finished.winnerId = "alpha";
 finished.players.find((player) => player.id === "bravo").status = "eliminated";
 const finishedSpectator = sanitizeState(finished, "__spectator__");
-assert(finishedSpectator.players.every((player) => player.cards.length === 0 && !player.objective), "Anche a partita conclusa la vista spettatore deve restare priva di informazioni private.");
+assert(finishedSpectator.players.every((player) => player.objective), "A partita conclusa gli obiettivi devono essere rivelati nel rapporto finale.");
 const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
 assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
 assert(rematch.matchId !== finished.matchId, "La rivincita deve avere un nuovo identificatore statistico.");
@@ -299,4 +309,4 @@ for (let step = 0; step < 80 && botGame.phase !== "gameover" && !botCompletedTur
 }
 assert(sawBotTurn && botCompletedTurn, "Il bot deve completare rinforzi, attacchi e fine turno come un giocatore.");
 
-console.log(`OK · uscita lobby e passaggio host · ${setupActions} blocchi alternati · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · privacy · bot sostitutivo e chiusura senza umani · rivincita`);
+console.log(`OK · uscita lobby e passaggio host · colori univoci · ${setupActions} blocchi alternati · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · obiettivi finali · bot sostitutivo e chiusura senza umani · rivincita`);
