@@ -1,4 +1,4 @@
-import { attackDiceForArmies, canAttackMatchup, defenseDiceForArmies } from "../lib/game-data.ts";
+import { attackDiceForArmies, canAttackMatchup, canAttackWithGarrison, defenseDiceForArmies } from "../lib/game-data.ts";
 
 const attackCases = new Map([[0, 0], [1, 0], [2, 1], [3, 2], [4, 3], [20, 3]]);
 const defenseCases = new Map([[0, 0], [1, 1], [2, 2], [3, 3], [20, 3]]);
@@ -30,4 +30,8 @@ for (const [attacker, defender, expected] of matchupCases) {
   if (actual !== expected) throw new Error(`Attacco ${attacker} contro ${defender}: atteso ${expected}, ottenuto ${actual}.`);
 }
 
-console.log("OK · dadi automatici 3/2/1 e blocco preventivo 2→2+, 3→3+");
+if (canAttackWithGarrison(2, 1, true)) throw new Error("Con 2 armate e un secondo confine nemico non è possibile garantire il presidio di 2 dopo la conquista.");
+if (!canAttackWithGarrison(2, 1, false)) throw new Error("Con 2 armate si deve poter attaccare 1 quando la conquista rende sicuro il territorio di partenza.");
+if (!canAttackWithGarrison(3, 2, true)) throw new Error("Con 3 armate si deve poter attaccare 2 lasciando poi un presidio di 2.");
+
+console.log("OK · dadi automatici 3/2/1 · blocco 2→2+, 3→3+ · presidio post-conquista");

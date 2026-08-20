@@ -3,7 +3,7 @@
 import { useState, type CSSProperties } from "react";
 import { GraphicDiceRow, PipDie } from "@/components/DiceArena";
 import { mustTradeCards } from "@/lib/card-rules";
-import { TERRITORY_BY_ID, attackDiceForArmies, canAttackMatchup, defenseDiceForArmies, type TerritoryId } from "@/lib/game-data";
+import { TERRITORY_BY_ID, attackDiceForArmies, canAttackWithGarrison, defenseDiceForArmies, type TerritoryId } from "@/lib/game-data";
 import type { GameAction, RoomEnvelope } from "@/lib/game-types";
 
 export function DiceRow({ values, tone }: { values: number[]; tone: "attack" | "defense" }) {
@@ -53,8 +53,15 @@ export default function ActionPanel({
   const mustTrade = mustTradeCards(me.cards);
   const maxAttackDice = selectedFrom ? attackDiceForArmies(state.territories[selectedFrom].armies) : 0;
   const maxDefenseDice = selectedTo ? defenseDiceForArmies(state.territories[selectedTo].armies) : 0;
+  const hasOtherEnemyBorder = Boolean(selectedFrom && selectedTo && TERRITORY_BY_ID[selectedFrom].adjacent.some(
+    (territoryId) => territoryId !== selectedTo && state.territories[territoryId].ownerId !== meId,
+  ));
   const legalAttack = selectedFrom && selectedTo
-    ? canAttackMatchup(state.territories[selectedFrom].armies, state.territories[selectedTo].armies)
+    ? canAttackWithGarrison(
+      state.territories[selectedFrom].armies,
+      state.territories[selectedTo].armies,
+      hasOtherEnemyBorder,
+    )
     : false;
   const sourceMinimum = selectedFrom && TERRITORY_BY_ID[selectedFrom].adjacent.some(
     (territoryId) => state.territories[territoryId].ownerId !== meId,
@@ -125,7 +132,7 @@ export default function ActionPanel({
             <h2>{repeatAttack ? "Vuoi attaccare ancora?" : "Prepara l'attacco"}</h2><div className="battle-route"><span>{name(selectedFrom)} <small>{state.territories[selectedFrom].armies}</small></span><b>→</b><span>{name(selectedTo)} <small>{state.territories[selectedTo].armies}</small></span></div>
             <p>{repeatAttack ? "Il territorio ha resistito. Puoi rilanciare subito gli stessi due territori senza selezionarli di nuovo." : "Premi tu una sola volta: i dadi d'attacco e quelli del difensore verranno calcolati con il massimo regolamentare."}</p>
             <div className="automatic-dice-pair"><div className="automatic-dice attack"><div>{Array.from({ length: maxAttackDice }, (_, index) => <PipDie key={index} value={index + 1} tone="attack" />)}</div><b>{maxAttackDice} {maxAttackDice === 1 ? "DADO" : "DADI"} D&apos;ATTACCO</b></div><div className="automatic-dice defense"><div>{Array.from({ length: maxDefenseDice }, (_, index) => <PipDie key={index} value={index + 1} tone="defense" />)}</div><b>{maxDefenseDice} {maxDefenseDice === 1 ? "DADO" : "DADI"} DI DIFESA · AUTO</b></div></div>
-            {!legalAttack && <p className="attack-rule-warning">Questo attacco rischierebbe di azzerare il territorio di partenza: scegli un bersaglio meno presidiato.</p>}
+            {!legalAttack && <p className="attack-rule-warning">{hasOtherEnemyBorder && state.territories[selectedFrom].armies < 3 ? "Non potresti occupare il nuovo territorio lasciando 2 armate contro l'altro nemico." : "Questo attacco non rispetta il rapporto consentito: 2 può attaccare solo 1, 3 solo 1 o 2, da 4 in su qualsiasi presidio."}</p>}
             <button className={`danger-button full-button ${repeatAttack ? "repeat-attack" : ""}`} disabled={busy || maxAttackDice < 1 || !legalAttack} onClick={() => action({ type: "attack", from: selectedFrom, to: selectedTo })}>{repeatAttack ? "Attacca ancora" : "Lancia i dadi e risolvi la battaglia"}</button>
             <button className="text-button" onClick={() => { setSelectedFrom(undefined); setSelectedTo(undefined); }}>Cambia territori</button>
           </> : <><h2>{selectedFrom ? "Scegli il bersaglio" : "Scegli da dove attaccare"}</h2><p>{selectedFrom ? `Hai selezionato ${name(selectedFrom)}. Ora tocca un territorio nemico confinante.` : "Tocca un tuo territorio con almeno 2 armate, poi un confine avversario."}</p>{selectedFrom && <button className="text-button" onClick={() => setSelectedFrom(undefined)}>Annulla selezione</button>}</>}
@@ -138,12 +145,12 @@ export default function ActionPanel({
     <section className="action-panel">
       <div className="action-kicker">FASE 3 · SPOSTAMENTO</div><h2>{state.fortifyUsed ? "Dominio consolidato" : selectedFrom ? "Scegli la destinazione" : "Spostamento strategico"}</h2>
       <p>{state.fortifyUsed ? "Hai già spostato le armate. Puoi terminare il turno." : "Puoi spostare armate una sola volta tra due territori collegati. Da un confine nemico devono restare almeno 2 armate."}</p>
-      {!state.fortifyUsed && selectedFrom && selectedTo && <><div className="battle-route"><span>{name(selectedFrom)}</span><b>→</b><span>{name(selectedTo)}</span></div><input className="range-input" type="range" min={1} max={Math.max(1, maxFortify)} value={Math.min(fortifyAmount, Math.max(1, maxFortify))} onChange={(event) => setFortifyAmount(Number(event.target.value))} /><div className="range-label"><span>1</span><b>{Math.min(fortifyAmount, maxFortify)} armate</b><span>{maxFortify}</span></div><button className="primary-button full-button" disabled={busy || maxFortify < 1} onClick={() => action({ type: "fortify", from: selectedFrom, to: selectedTo, amount: Math.min(fortifyAmount, maxFortify) })}>Conferma spostamento</button></>}
+      {!state.fortifyUsed && selectedFrom && selectedTo && <><div className="battle-route"><span>{name(selectedFrom)}</span><b>→</b><span>{name(selectedTo)}</span></div><div className="fortify-range-row"><input className="range-input" type="range" min={1} max={Math.max(1, maxFortify)} value={Math.min(fortifyAmount, Math.max(1, maxFortify))} onChange={(event) => setFortifyAmount(Number(event.target.value))} /><button type="button" disabled={maxFortify < 1} onClick={() => setFortifyAmount(maxFortify)}>MAX</button></div><div className="range-label"><span>1</span><b>{Math.min(fortifyAmount, maxFortify)} armate</b><span>{maxFortify}</span></div><button className="primary-button full-button" disabled={busy || maxFortify < 1} onClick={() => action({ type: "fortify", from: selectedFrom, to: selectedTo, amount: Math.min(fortifyAmount, maxFortify) })}>Conferma spostamento</button></>}
       {!state.fortifyUsed && selectedFrom && !selectedTo && <p className="selection-note">Partenza: <b>{name(selectedFrom)}</b>. Tocca un altro tuo territorio collegato. Presidio minimo: <b>{sourceMinimum}</b>.</p>}
       <button className="secondary-button full-button end-phase" disabled={busy} onClick={() => action({ type: "endTurn" })}>Termina turno {state.conqueredThisTurn ? "e pesca una carta" : ""}</button>
     </section>
   );
 
   const winner = state.players.find((player) => player.id === state.winnerId);
-  return <section className="action-panel victory-panel"><div className="victory-laurel">✦</div><div className="action-kicker">CAMPAGNA CONCLUSA</div><h2>{winner ? `${winner.name} domina il mondo` : "Partita chiusa"}</h2><p>{state.victoryReason}</p>{winner && state.hostId === meId && <button className="primary-button full-button" disabled={busy} onClick={() => action({ type: "rematch" })}>Inizia una rivincita</button>}</section>;
+  return <section className="action-panel victory-panel"><div className="victory-laurel">✦</div><div className="action-kicker">CAMPAGNA CONCLUSA</div><h2>{winner ? `${winner.name} domina il mondo` : "Partita chiusa"}</h2><p>{state.victoryReason}</p></section>;
 }

@@ -148,6 +148,7 @@ export type GameState = {
   matchId?: string;
   startedAt?: number;
   deadlineAt?: number;
+  finishedAt?: number;
   timedEndgame?: TimedEndgameState;
   turnOrder: string[];
   turnIndex: number;
@@ -213,5 +214,4 @@ export type GameAction =
   | { type: "endTurn" }
   | { type: "sendMessage"; text: string }
   | { type: "advanceBot" }
-  | { type: "resign" }
-  | { type: "rematch" };
+  | { type: "resign" };

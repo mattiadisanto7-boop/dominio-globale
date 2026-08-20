@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
-import { TERRITORIES, TERRITORY_BY_ID, canAttackMatchup, type TerritoryId } from "@/lib/game-data";
+import { TERRITORIES, TERRITORY_BY_ID, canAttackWithGarrison, type TerritoryId } from "@/lib/game-data";
 import {
   BOARD_TERRITORY_TRANSFORM,
   BOARD_VIEW_BOX,
@@ -44,7 +44,13 @@ export default function WorldMap({
     ? new Set<TerritoryId>(TERRITORY_BY_ID[selectedFrom].adjacent.filter((id) =>
       state.phase !== "attack" || (
         state.territories[id].ownerId !== meId &&
-        canAttackMatchup(state.territories[selectedFrom].armies, state.territories[id].armies)
+        canAttackWithGarrison(
+          state.territories[selectedFrom].armies,
+          state.territories[id].armies,
+          TERRITORY_BY_ID[selectedFrom].adjacent.some(
+            (adjacentId) => adjacentId !== id && state.territories[adjacentId].ownerId !== meId,
+          ),
+        )
       ),
     ))
     : new Set<TerritoryId>();

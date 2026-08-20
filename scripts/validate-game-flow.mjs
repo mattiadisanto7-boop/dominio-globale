@@ -155,6 +155,21 @@ assert(!state.pendingBattle, "La difesa non deve restare in attesa di un clic.")
 assert(state.lastBattle?.attackerDice.length === attackDiceForArmies(4), "I dadi d'attacco automatici non rispettano la regola 3/2/1.");
 assert(state.lastBattle?.defenderDice.length === defenseDiceForArmies(3), "I dadi di difesa automatici non rispettano la regola 3/2/1.");
 
+const guardedAttack = structuredClone(state);
+const guardedEnemyId = guardedAttack.players.find((player) => player.id !== attackerId).id;
+guardedAttack.phase = "attack";
+guardedAttack.currentPlayerId = attackerId;
+guardedAttack.turnIndex = guardedAttack.turnOrder.indexOf(attackerId);
+guardedAttack.pendingBattle = undefined;
+guardedAttack.pendingMove = undefined;
+guardedAttack.territories.ukraine = { ownerId: attackerId, armies: 2 };
+guardedAttack.territories.scandinavia = { ownerId: guardedEnemyId, armies: 1 };
+guardedAttack.territories["middle-east"] = { ownerId: guardedEnemyId, armies: 2 };
+assertRuleError(
+  () => applyGameAction(guardedAttack, attackerId, { type: "attack", from: "ukraine", to: "scandinavia" }),
+  "Un attacco non deve poter creare una conquista che lasci una sola armata davanti a un secondo nemico.",
+);
+
 state.pendingMove = undefined;
 state.phase = "fortify";
 state.currentPlayerId = attackerId;
@@ -210,8 +225,8 @@ for (let attempt = 0; attempt < 80 && !continentGame.pendingMove; attempt += 1) 
 assert(continentGame.pendingMove, "Il test di conquista continentale non ha conquistato l'Indonesia.");
 assert(continentGame.lastContinentConquest?.continent === "oceania", "La conquista dell'Oceania deve generare l'evento celebrativo.");
 assert(
-  continentGame.territories.siam.armies - continentGame.pendingMove.max >= continentGame.pendingMove.sourceMinimum || continentGame.pendingMove.forcedException,
-  "L'occupazione deve conservare il presidio richiesto, salvo spostamento minimo obbligatorio.",
+  continentGame.territories.siam.armies - continentGame.pendingMove.max >= continentGame.pendingMove.sourceMinimum && !continentGame.pendingMove.forcedException,
+  "L'occupazione deve conservare sempre il presidio richiesto, senza eccezioni sui confini nemici.",
 );
 
 let timed = structuredClone(state);
@@ -244,12 +259,11 @@ assert(timed.timedEndgame.threshold === 5, "Dopo un giro completo la soglia dell
 const finished = structuredClone(state);
 finished.phase = "gameover";
 finished.winnerId = "alpha";
+finished.finishedAt = Date.now();
 finished.players.find((player) => player.id === "bravo").status = "eliminated";
 const finishedSpectator = sanitizeState(finished, "__spectator__");
 assert(finishedSpectator.players.every((player) => player.objective), "A partita conclusa gli obiettivi devono essere rivelati nel rapporto finale.");
-const rematch = applyGameAction(finished, "alpha", { type: "rematch" });
-assert(rematch.phase === "setup" && rematch.players.every((player) => player.status === "active"), "La rivincita deve riammettere anche i giocatori eliminati.");
-assert(rematch.matchId !== finished.matchId, "La rivincita deve avere un nuovo identificatore statistico.");
+assertRuleError(() => applyGameAction(finished, "alpha", { type: "rematch" }), "La rivincita non deve più essere disponibile.");
 
 let botGame = createLobby("BOT004", { id: "human_a", name: "Human A", profileId: "profile_human_a" }, {
   maxPlayers: 4,
@@ -271,6 +285,7 @@ assert(TERRITORIES.filter((territory) => substitutedGame.territories[territory.i
 assert(!("abandonedProfileId" in sanitizeState(substitutedGame, "human_a").players.find((player) => player.id === "human_b")), "L'identificatore del profilo abbandonato deve restare privato.");
 const botsOnlyGame = applyGameAction(substitutedGame, "human_a", { type: "resign" });
 assert(botsOnlyGame.phase === "gameover" && !botsOnlyGame.winnerId, "La partita deve chiudersi senza vincitore quando restano soltanto bot.");
+assert(Boolean(botsOnlyGame.finishedAt), "Il timer deve registrare e mantenere fermo l'istante di fine partita.");
 let botSetupSteps = 0;
 let verifiedSingleBotPlacement = false;
 while (botGame.phase === "setup") {
@@ -309,4 +324,4 @@ for (let step = 0; step < 80 && botGame.phase !== "gameover" && !botCompletedTur
 }
 assert(sawBotTurn && botCompletedTurn, "Il bot deve completare rinforzi, attacchi e fine turno come un giocatore.");
 
-console.log(`OK · uscita lobby e passaggio host · colori univoci · ${setupActions} blocchi alternati · timer post-setup · attacchi sicuri · presidio 2 · continente · sdadata · obiettivi finali · bot sostitutivo e chiusura senza umani · rivincita`);
+console.log(`OK · uscita lobby e passaggio host · colori univoci · ${setupActions} blocchi alternati · timer post-setup e arresto finale · attacchi sicuri · presidio 2 senza eccezioni · continente · sdadata · obiettivi finali · bot sostitutivo e chiusura senza umani · nessuna rivincita`);

@@ -19,8 +19,8 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     ["01", "Schiera", "Ricevi territori casuali. A turno piazzi 3 armate, una per clic e anche su territori differenti; poi il comando passa. Il timer parte soltanto quando tutti hanno finito."],
     ["02", "Rinforza", "A ogni turno ottieni almeno 3 armate, più i bonus dei continenti. Appena piazzi l'ultima, il gioco passa automaticamente all'attacco."],
     ["03", "Attacca", "Scegli due territori confinanti e premi una volta. Il server lancia i dadi massimi; da 2 armate non puoi attaccarne 2+, da 3 non puoi attaccarne 3+. Se il nemico resiste puoi premere Attacca ancora."],
-    ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico. Se la partenza confina con un nemico, devono restarvi almeno 2 armate; l'occupazione minima dopo una conquista applica da sola l'eventuale eccezione."],
-    ["05", "Gestisci le carte", "Le carte mostrano simbolo, sagoma e icona del territorio. Da Le tue carte puoi selezionare e giocare il tris; i territori obiettivo restano evidenziati sulla mappa."],
+    ["04", "Consolida", "Dopo gli attacchi puoi effettuare uno spostamento strategico anche con il tasto MAX. Se la partenza confina ancora con un nemico, devono sempre restarvi almeno 2 armate."],
+    ["05", "Gestisci le carte", "Le carte mostrano simbolo e sagoma del territorio. Quella pescata compare per 3 secondi; da Le tue carte puoi consultare il mazzo e giocare il tris."],
     ["06", "Chiudi la campagna", "Se abbandoni, un bot eredita il tuo esercito; se restano solo bot, la partita si chiude. Dopo timer, ultimo giro e sdadata compare il rapporto con punteggi, statistiche e obiettivi di tutti."],
   ];
   return (
@@ -203,7 +203,7 @@ export default function HomeScreen({
         <div className="hero-copy">
           <span className="eyebrow"><i /> Strategia online · 2–6 giocatori</span>
           <h1>Il mondo non si conquista per caso.</h1>
-          <p>Il tabellone mondiale completo, le 16 carte Challenge da 86 punti, bot strategici, obiettivi personali e dadi automatici animati. La modalità principale dura 90 minuti dopo lo schieramento, ultimo giro e sdadata finale.</p>
+          <p>Il tabellone mondiale completo, le 16 carte Challenge da 86 punti, bot avanzati, obiettivi personali e dadi automatici animati. La modalità principale dura 90 minuti dopo lo schieramento, ultimo giro e sdadata finale.</p>
           <div className="feature-row"><span><b>42</b> territori</span><span><b>16</b> obiettivi</span><span><b>86</b> punti</span></div>
         </div>
         <div className="war-room-card">

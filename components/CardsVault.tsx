@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { cardTradeValue, mustTradeCards } from "@/lib/card-rules";
-import { CONTINENTS, SYMBOL_LABELS, TERRITORY_BY_ID, TERRITORY_MOTIFS } from "@/lib/game-data";
+import { CONTINENTS, SYMBOL_LABELS, TERRITORY_BY_ID } from "@/lib/game-data";
 import {
   BOARD_TERRITORY_TRANSFORM,
   TERRITORY_CENTERS,
@@ -88,7 +88,6 @@ export default function CardsVault({
                   const territory = card.territoryId ? TERRITORY_BY_ID[card.territoryId] : undefined;
                   const owned = Boolean(card.territoryId && state.territories[card.territoryId].ownerId === player.id);
                   const center = card.territoryId ? TERRITORY_CENTERS[card.territoryId] : undefined;
-                  const motif = card.territoryId ? TERRITORY_MOTIFS[card.territoryId] : undefined;
                   const isSelected = selected.includes(card.id);
                   return (
                     <button
@@ -107,14 +106,13 @@ export default function CardsVault({
                           <svg viewBox={`${center.x - 58} ${center.y - 44} 116 88`} preserveAspectRatio="xMidYMid meet">
                             <path transform={BOARD_TERRITORY_TRANSFORM} d={TERRITORY_SHAPES[territory.id]} />
                           </svg>
-                          <span className="vault-motif"><b>{motif?.icon}</b><small>{motif?.label}</small></span>
                         </span>
                       ) : (
                         <span className="vault-territory-art jolly-art" aria-hidden="true"><b>🌍</b><small>Ogni territorio</small></span>
                       )}
                       <small>CARTA TERRITORIO · {territory ? CONTINENTS[territory.continent].name : "UNIVERSALE"}</small>
                       <h3>{territory?.name ?? "Jolly universale"}</h3>
-                      <p>{territory ? motif?.label : "Sostituisce un simbolo in una coppia uguale"}</p>
+                      <p>{territory ? `${SYMBOL_LABELS[card.symbol]} · ${CONTINENTS[territory.continent].name}` : "Sostituisce un simbolo in una coppia uguale"}</p>
                       {owned && <strong>+2 SUL TERRITORIO SE ENTRA NEL TRIS</strong>}
                     </button>
                   );

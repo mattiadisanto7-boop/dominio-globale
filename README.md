@@ -22,17 +22,18 @@ Premi il pulsante qui sopra per creare automaticamente su Render il servizio web
 - dadi animati e conteggio regolamentare: un solo clic dell'attaccante lancia automaticamente attacco 3/2/1 con 4+/3/2 armate e difesa 3/2/1 con 3+/2/1 armate;
 - blocco preventivo degli attacchi che potrebbero azzerare la partenza: 2 armate non possono attaccarne 2 o più, 3 armate non possono attaccarne 3 o più;
 - pulsante **Attacca ancora** dopo uno scontro non decisivo, senza dover riselezionare la stessa coppia di territori;
-- presidio minimo di 2 armate quando uno spostamento volontario parte da un territorio confinante con il nemico; l'eccezione viene applicata automaticamente quando l'occupazione minima dopo una conquista costringe a lasciarne una;
+- presidio minimo inderogabile di 2 armate quando uno spostamento o un'occupazione parte da un territorio che confina ancora con il nemico; il motore impedisce in anticipo gli attacchi che renderebbero impossibile rispettarlo;
 - anteprima delle guarnigioni prima di occupare un territorio, selettore minimo/massimo e comando **MAX**;
 - marcia animata dei carri verso ogni territorio conquistato e celebrazioni continentali tematiche con fauna, simboli, paesaggi, colori e fanfara dedicati;
-- carte illustrate con simbolo Fanteria/Cavalleria/Artiglieria, sagoma reale e icona tipica di ciascun territorio; l'intero mazzo privato contiene anche la selezione e il comando del tris;
-- paesaggio sonoro militare sintetizzato dal browser: cingoli e metallo per gli schieramenti, dadi, artiglieria, conquiste, turni, carte e messaggi;
+- carte illustrate con simbolo Fanteria/Cavalleria/Artiglieria e sagoma reale del territorio; la carta pescata compare privatamente per 3 secondi e l'intero mazzo contiene anche selezione e comando del tris;
+- paesaggio sonoro militare sintetizzato dal browser: cingoli e metallo per gli schieramenti, dadi, artiglieria, conquiste, squilli specifici per il proprio turno, carte e messaggi;
 - rinforzi, fortificazione, carte territorio, tris Challenge, jolly ed eliminazioni;
-- modalità principale Challenge da 90 minuti, con timer avviato soltanto dopo l'ultimo piazzamento iniziale: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
-- riempimento dei posti liberi con bot strategici che schierano, rinforzano, attaccano, conquistano, spostano e pescano carte usando lo stesso motore di regole dei giocatori;
+- modalità principale Challenge da 90 minuti, con timer avviato soltanto dopo l'ultimo piazzamento iniziale e congelato alla conclusione: completamento del giro in corso, ultimo giro completo e sdadata automatica con 2 dadi, soglia crescente da 4 a 7 e salto del lancio dopo 3 o più conquiste nel turno;
+- riempimento dei posti liberi con bot avanzati che valutano obiettivo, pressione sui confini, continenti, eliminazioni, cambi di carte e concentrazione delle armate usando lo stesso motore di regole dei giocatori;
 - uscita effettiva dalla lobby con liberazione immediata del posto e trasferimento automatico dell'host; durante una partita chi abbandona viene sostituito da un bot che eredita eserciti, carte e obiettivo, mentre la sala si chiude senza vincitore quando non resta nessun umano;
 - rimozione automatica delle vecchie partite attive rimaste con soli bot;
-- rapporto finale con classifica, Punti Dominio ottenuti, statistiche complete e obiettivi di tutti i partecipanti consultabili;
+- celebrazioni militari animate per la conquista dei continenti e una sequenza speciale “RISIKO!” alla vittoria;
+- rapporto finale con classifica, Punti Dominio ottenuti, statistiche complete e obiettivi di tutti i partecipanti consultabili nei rispettivi colori;
 - chat, registro eventi, statistiche, tutorial e interfaccia responsive.
 
 Il progetto usa **Next.js**, **React** e **PostgreSQL**. Nome, grafica e codice sono originali e non rappresentano un prodotto ufficiale RisiKo!.

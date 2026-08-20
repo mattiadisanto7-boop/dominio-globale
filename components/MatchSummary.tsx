@@ -13,9 +13,10 @@ export default function MatchSummary({ state, delayForAnimations }: { state: Pub
     (!state.lastSuddenDeath?.closed || state.lastBattle.at > state.lastSuddenDeath.at),
   );
   const completedContinent = Boolean(recentConquest && state.lastContinentConquest?.at === state.lastBattle?.at);
-  const revealDelay = completedContinent ? 7100 : recentConquest ? 3350 : 450;
-  const [ready, setReady] = useState(!recentConquest);
-  const [open, setOpen] = useState(!recentConquest);
+  const playsRisikoAnimation = Boolean(delayForAnimations && state.winnerId);
+  const revealDelay = playsRisikoAnimation ? 4800 : completedContinent ? 7400 : recentConquest ? 3350 : 450;
+  const [ready, setReady] = useState(!recentConquest && !playsRisikoAnimation);
+  const [open, setOpen] = useState(!recentConquest && !playsRisikoAnimation);
   const [objectivePlayerId, setObjectivePlayerId] = useState(state.winnerId ?? state.players[0]?.id);
   useEffect(() => {
     if (ready) return;
@@ -82,7 +83,7 @@ export default function MatchSummary({ state, delayForAnimations }: { state: Pub
               ))}</tbody>
             </table>
           </div>
-          {objectivePlayer?.objective && <aside className="final-objective-view"><header><span>OBIETTIVO DI</span><b>{objectivePlayer.name}</b></header><ObjectiveCard state={state} player={objectivePlayer} /></aside>}
+          {objectivePlayer?.objective && <aside className="final-objective-view"><header><span>OBIETTIVO DI</span><b style={{ color: objectivePlayer.color }}>{objectivePlayer.name}</b></header><ObjectiveCard state={state} player={objectivePlayer} revealed /></aside>}
         </div>
         <footer><span><b>PD</b> = Punti Dominio guadagnati in questa partita.</span><button className="secondary-button" onClick={() => setOpen(false)}>Torna al tabellone</button></footer>
       </section>

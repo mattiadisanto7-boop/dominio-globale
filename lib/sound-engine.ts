@@ -9,8 +9,10 @@ export type GameSound =
   | "fortify"
   | "cards"
   | "turn"
+  | "yourTurn"
   | "message"
   | "victory"
+  | "risiko"
   | "error";
 
 class GameSoundEngine {
@@ -114,6 +116,7 @@ class GameSoundEngine {
           this.tone(310 - index * 18, delay, .065, .075, "square", 165);
         });
         this.noise(.22, .25, .1, 175, "lowpass", .5);
+        [0, .12, .24].forEach((delay) => this.tone(118, delay, .055, .13, "square", 72));
         break;
       case "dice":
         [0, .07, .14, .21, .29, .38, .48].forEach((delay, index) => {
@@ -132,14 +135,19 @@ class GameSoundEngine {
       case "conquest":
         this.noise(0, .34, .13, 135, "lowpass", .5);
         this.tone(72, 0, .36, .24, "sawtooth", 34);
+        [0, .19, .38].forEach((delay) => {
+          this.noise(delay, .16, .14, 155, "lowpass", .48);
+          this.tone(92, delay, .2, .16, "sawtooth", 41);
+        });
         [392, 523, 659, 784].forEach((frequency, index) => this.tone(frequency, .16 + index * .105, .42, .14, "triangle", frequency * 1.03));
         break;
       case "continent":
-        this.noise(0, .72, .12, 118, "lowpass", .45);
-        [196, 247, 294, 392, 494, 587, 784].forEach((frequency, index) => {
-          this.tone(frequency, index * .13, .7, .15, index < 3 ? "sawtooth" : "triangle", frequency * 1.015);
+        [0, .18, .36, .62].forEach((delay, index) => {
+          this.noise(delay, .42, .2 - index * .02, 105 + index * 18, "lowpass", .42);
+          this.tone(70 + index * 9, delay, .4, .22, "sawtooth", 29);
         });
-        [0, .26, .52, .78].forEach((delay) => this.noise(delay, .13, .07, 1850, "highpass", .8));
+        [196, 247, 294, 392, 494, 587, 784].forEach((frequency, index) => this.tone(frequency, .42 + index * .13, .72, .15, index < 3 ? "sawtooth" : "triangle", frequency * 1.015));
+        [0, .26, .52, .78, 1.04].forEach((delay) => this.noise(delay, .12, .085, 1950, "highpass", .85));
         break;
       case "sdadata":
         [0, .08, .17, .27, .39, .53].forEach((delay, index) => {
@@ -150,16 +158,26 @@ class GameSoundEngine {
         break;
       case "fortify":
         this.tone(64, 0, .4, .2, "sawtooth", 42);
-        [0, .1, .2].forEach((delay) => this.noise(delay, .05, .06, 1500, "highpass", .8));
+        [0, .09, .18, .27, .36].forEach((delay, index) => {
+          this.noise(delay, .045, .075, 1500 + index * 90, "highpass", .8);
+          this.tone(142 - index * 5, delay, .055, .08, "square", 86);
+        });
         this.tone(170, .08, .3, .12, "triangle", 390);
         break;
       case "cards":
         [523, 659, 784, 1047].forEach((frequency, index) => this.tone(frequency, index * .075, .42, .1, "sine", frequency));
         break;
       case "turn":
-        this.tone(262, 0, .3, .14, "sawtooth", 262);
-        this.tone(392, .11, .36, .15, "sawtooth", 392);
-        this.tone(523, .24, .46, .13, "triangle", 523);
+        this.noise(0, .055, .07, 1450, "highpass", .9);
+        this.tone(110, 0, .16, .12, "square", 84);
+        this.tone(165, .11, .2, .1, "square", 124);
+        break;
+      case "yourTurn":
+        [392, 523, 659, 523, 784].forEach((frequency, index) => {
+          this.tone(frequency, index * .14, .36, .17, "sawtooth", frequency * 1.01);
+          if (index < 4) this.noise(index * .14, .045, .075, 1750, "highpass", .92);
+        });
+        [0, .18, .36, .54].forEach((delay) => this.tone(92, delay, .08, .13, "square", 58));
         break;
       case "message":
         this.tone(880, 0, .11, .1, "sine", 1100);
@@ -168,6 +186,16 @@ class GameSoundEngine {
       case "victory":
         [262, 330, 392, 523, 659, 784].forEach((frequency, index) => this.tone(frequency, index * .13, .65, .16, "triangle", frequency * 1.01));
         [0.5, .66, .82].forEach((delay) => this.noise(delay, .28, .06));
+        break;
+      case "risiko":
+        [0, .22, .44].forEach((delay, index) => {
+          this.noise(delay, .58, .25 - index * .035, 92 + index * 22, "lowpass", .4);
+          this.tone(62 + index * 12, delay, .52, .27, "sawtooth", 27);
+        });
+        [196, 262, 330, 392, 523, 659, 784, 1047].forEach((frequency, index) => {
+          this.tone(frequency, .36 + index * .115, .82, .18, index < 4 ? "sawtooth" : "triangle", frequency * 1.02);
+        });
+        [1.05, 1.2, 1.35, 1.5].forEach((delay) => this.noise(delay, .12, .085, 2100, "highpass", .9));
         break;
       case "error":
         this.tone(180, 0, .18, .2, "sawtooth", 92);

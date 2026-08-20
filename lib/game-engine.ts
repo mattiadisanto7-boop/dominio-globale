@@ -4,7 +4,7 @@ import {
   TERRITORIES,
   TERRITORY_BY_ID,
   attackDiceForArmies,
-  canAttackMatchup,
+  canAttackWithGarrison,
   defenseDiceForArmies,
   type ContinentId,
   type TerritoryId,
@@ -261,6 +261,7 @@ const initializeGame = (state: GameState) => {
   state.phase = "setup";
   state.startedAt = undefined;
   state.deadlineAt = undefined;
+  state.finishedAt = undefined;
   state.timedEndgame = undefined;
   state.deck = createDeck();
   state.discard = [];
@@ -450,16 +451,17 @@ const normalizeRuntimeState = (state: GameState) => {
     state.timedEndgame = { stage: "running", threshold: 4, turnsAtThreshold: 0 };
   }
   if (!state.deadlineAt) state.timedEndgame = undefined;
-  if (state.pendingMove && state.pendingMove.sourceMinimum === undefined) {
+  if (state.phase === "gameover" && !state.finishedAt) {
+    state.finishedAt = state.lastSuddenDeath?.at ?? state.lastBattle?.at ?? state.log[0]?.at ?? Date.now();
+  }
+  if (state.pendingMove) {
     const sourceMinimum = bordersEnemy(state, state.pendingMove.from, state.pendingMove.playerId) ? 2 : 1;
     const sourceArmies = state.territories[state.pendingMove.from].armies;
-    const legalMaximum = sourceArmies - sourceMinimum;
-    state.pendingMove.forcedException = legalMaximum < state.pendingMove.min;
-    state.pendingMove.sourceMinimum = state.pendingMove.forcedException ? 1 : sourceMinimum;
-    state.pendingMove.max = Math.min(
-      state.pendingMove.max,
-      Math.max(state.pendingMove.min, legalMaximum),
-    );
+    const legalMaximum = Math.max(1, sourceArmies - sourceMinimum);
+    state.pendingMove.sourceMinimum = sourceMinimum;
+    state.pendingMove.max = Math.min(state.pendingMove.max, legalMaximum);
+    state.pendingMove.min = Math.min(state.pendingMove.min, state.pendingMove.max);
+    state.pendingMove.forcedException = false;
   }
 };
 
@@ -491,6 +493,7 @@ const objectiveMet = (state: GameState, player: GamePlayer) => {
 
 const finishGame = (state: GameState, winnerId: string, reason: string) => {
   state.phase = "gameover";
+  state.finishedAt = Date.now();
   state.winnerId = winnerId;
   state.victoryReason = reason;
   state.pendingBattle = undefined;
@@ -501,6 +504,7 @@ const finishGame = (state: GameState, winnerId: string, reason: string) => {
 
 const closeGameWithoutHumans = (state: GameState) => {
   state.phase = "gameover";
+  state.finishedAt = Date.now();
   state.currentPlayerId = undefined;
   state.winnerId = undefined;
   state.victoryReason = "Partita chiusa: non è rimasto nessun giocatore umano.";
@@ -574,20 +578,18 @@ const resolveBattle = (state: GameState, defenderDice: number[]) => {
   state.conqueredThisTurn = true;
   state.territoriesConqueredThisTurn += 1;
   attacker.stats.territoriesConquered += 1;
-  const rawMax = from.armies - 1;
-  const min = Math.max(1, Math.min(battle.requestedDice, rawMax));
   const borderMinimum = bordersEnemy(state, battle.from, battle.attackerId) ? 2 : 1;
-  const voluntaryMax = from.armies - borderMinimum;
-  const forcedException = voluntaryMax < min;
-  const max = Math.min(rawMax, Math.max(min, voluntaryMax));
+  const max = from.armies - borderMinimum;
+  assertRule(max >= 1, "La conquista non può lasciare il territorio di partenza sotto il presidio minimo.");
+  const min = Math.max(1, Math.min(battle.requestedDice, max));
   state.pendingMove = {
     playerId: battle.attackerId,
     from: battle.from,
     to: battle.to,
     min,
     max,
-    sourceMinimum: forcedException ? 1 : borderMinimum,
-    forcedException,
+    sourceMinimum: borderMinimum,
+    forcedException: false,
   };
 
   const conqueredContinent = TERRITORY_BY_ID[battle.to].continent;
@@ -771,18 +773,46 @@ const resolveTimedTurnEnd = (state: GameState, playerId: string) => {
   return resolveSuddenDeathTurn(state, playerId);
 };
 
-const botTerritoryScore = (state: GameState, bot: GamePlayer, territoryId: TerritoryId) => {
-  const territory = state.territories[territoryId];
-  const enemyBorders = TERRITORY_BY_ID[territoryId].adjacent.filter(
-    (adjacentId) => state.territories[adjacentId].ownerId !== bot.id,
-  ).length;
-  const mission = bot.objective?.territoryIds.includes(territoryId) ? 12 : 0;
-  return enemyBorders * 18 + mission - territory.armies * 2;
+const enemyNeighbours = (state: GameState, playerId: string, territoryId: TerritoryId) =>
+  TERRITORY_BY_ID[territoryId].adjacent.filter(
+    (adjacentId) => state.territories[adjacentId].ownerId !== playerId,
+  );
+
+const enemyPressure = (state: GameState, playerId: string, territoryId: TerritoryId) =>
+  enemyNeighbours(state, playerId, territoryId).reduce(
+    (sum, adjacentId) => sum + state.territories[adjacentId].armies,
+    0,
+  );
+
+const continentProgress = (state: GameState, playerId: string, continent: ContinentId) => {
+  const territories = TERRITORIES.filter((territory) => territory.continent === continent);
+  return territories.filter((territory) => state.territories[territory.id].ownerId === playerId).length / territories.length;
 };
 
+const botTerritoryScore = (state: GameState, bot: GamePlayer, territoryId: TerritoryId) => {
+  const territory = state.territories[territoryId];
+  const definition = TERRITORY_BY_ID[territoryId];
+  const enemies = enemyNeighbours(state, bot.id, territoryId);
+  const pressure = enemyPressure(state, bot.id, territoryId);
+  const mission = bot.objective?.territoryIds.includes(territoryId) ? 34 : 0;
+  const progress = continentProgress(state, bot.id, definition.continent) * 22;
+  const exposedMissionTargets = enemies.filter((id) => bot.objective?.territoryIds.includes(id)).length * 18;
+  return enemies.length * 22 + pressure * 2.2 + mission + progress + exposedMissionTargets - territory.armies * 2.5;
+};
+
+const bestBotTrade = (state: GameState, bot: GamePlayer) => validTradeSets(bot.cards)
+  .map((cardIds) => {
+    const cards = cardIds.map((id) => bot.cards.find((card) => card.id === id)!).filter(Boolean);
+    const ownedBonus = cards.some(
+      (card) => card.territoryId && state.territories[card.territoryId].ownerId === bot.id,
+    ) ? 2 : 0;
+    return { cardIds, score: tradeValue(cards) * 10 + ownedBonus };
+  })
+  .sort((left, right) => right.score - left.score)[0]?.cardIds;
+
 const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
-  const trade = validTradeSets(bot.cards)[0];
-  if ((state.phase === "reinforce" || state.phase === "attack") && bot.cards.length >= 5 && trade) {
+  const trade = bestBotTrade(state, bot);
+  if ((state.phase === "reinforce" || state.phase === "attack") && bot.cards.length >= 3 && trade) {
     return { type: "tradeCards", cardIds: trade };
   }
 
@@ -799,27 +829,53 @@ const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
 
   if (state.phase === "reinforce") {
     if (state.reinforcementPool <= 0) return { type: "beginAttack" };
-    const target = ownedTerritories(state, bot.id)
-      .sort((left, right) =>
-        botTerritoryScore(state, bot, right.id) - botTerritoryScore(state, bot, left.id) ||
-        left.id.localeCompare(right.id),
-      )[0];
+    const target = ownedTerritories(state, bot.id).map((territory) => {
+      const enemies = enemyNeighbours(state, bot.id, territory.id);
+      const offensiveScore = enemies.reduce((best, enemyId) => {
+        const enemy = state.territories[enemyId];
+        const enemyDefinition = TERRITORY_BY_ID[enemyId];
+        const mission = bot.objective?.territoryIds.includes(enemyId) ? 36 : 0;
+        const wouldCompleteContinent = TERRITORIES
+          .filter((item) => item.continent === enemyDefinition.continent && item.id !== enemyId)
+          .every((item) => state.territories[item.id].ownerId === bot.id);
+        const marginAfterDeploy = state.territories[territory.id].armies + state.reinforcementPool - enemy.armies;
+        return Math.max(best, marginAfterDeploy * 8 + mission + (wouldCompleteContinent ? 75 : 0) + enemyDefinition.value * 3);
+      }, 0);
+      const defensiveScore = Math.max(0, enemyPressure(state, bot.id, territory.id) - state.territories[territory.id].armies) * 5;
+      return {
+        territory,
+        score: botTerritoryScore(state, bot, territory.id) + offensiveScore + defensiveScore,
+      };
+    }).sort((left, right) => right.score - left.score || left.territory.id.localeCompare(right.territory.id))[0]?.territory;
     assertRule(target, "Il bot non ha territori da rinforzare.");
     return { type: "deploy", territoryId: target.id, amount: state.reinforcementPool };
   }
 
   if (state.phase === "attack") {
-    if (state.pendingMove) return { type: "moveAfterConquest", amount: state.pendingMove.min };
-    if (state.botAttacksThisTurn >= 6) return { type: "endAttack" };
+    if (state.pendingMove) {
+      const move = state.pendingMove;
+      const destinationPressure = enemyPressure(state, bot.id, move.to);
+      const sourcePressure = enemyPressure(state, bot.id, move.from);
+      const destinationIsMission = Boolean(bot.objective?.territoryIds.includes(move.to));
+      const desired = destinationPressure > 0 || destinationIsMission
+        ? sourcePressure > destinationPressure
+          ? Math.ceil((move.min + move.max) / 2)
+          : move.max
+        : move.min;
+      return { type: "moveAfterConquest", amount: Math.max(move.min, Math.min(move.max, desired)) };
+    }
+    if (state.botAttacksThisTurn >= 14) return { type: "endAttack" };
     const missionTargets = new Set(bot.objective?.territoryIds ?? []);
     const candidates = ownedTerritories(state, bot.id).flatMap((fromDefinition) => {
       const from = state.territories[fromDefinition.id];
       return fromDefinition.adjacent
         .filter((toId) => {
           const to = state.territories[toId];
+          const hasOtherEnemyBorder = fromDefinition.adjacent.some(
+            (adjacentId) => adjacentId !== toId && state.territories[adjacentId].ownerId !== bot.id,
+          );
           return to.ownerId !== bot.id &&
-            canAttackMatchup(from.armies, to.armies) &&
-            from.armies > to.armies;
+            canAttackWithGarrison(from.armies, to.armies, hasOtherEnemyBorder);
         })
         .map((toId) => {
           const to = state.territories[toId];
@@ -827,11 +883,21 @@ const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
           const completesContinent = TERRITORIES
             .filter((territory) => territory.continent === continent && territory.id !== toId)
             .every((territory) => state.territories[territory.id].ownerId === bot.id);
-          const score = (from.armies - to.armies) * 4 + TERRITORY_BY_ID[toId].value +
-            (missionTargets.has(toId) ? 14 : 0) + (completesContinent ? 18 : 0);
-          return { from: fromDefinition.id, to: toId, score };
+          const defenderTerritories = to.ownerId === NEUTRAL_ID ? 99 : ownedTerritories(state, to.ownerId).length;
+          const eliminatesOpponent = defenderTerritories === 1;
+          const margin = from.armies - to.armies;
+          const strategic = missionTargets.has(toId) || completesContinent || eliminatesOpponent;
+          const safeEnough = margin >= 1 || (strategic && margin >= -1 && from.armies >= 5);
+          const repeatsBattle = state.lastBattle?.from === fromDefinition.id && state.lastBattle.to === toId && !state.lastBattle.conquered;
+          const score = margin * 12 + TERRITORY_BY_ID[toId].value * 4 +
+            (missionTargets.has(toId) ? 42 : 0) +
+            (completesContinent ? 90 : continentProgress(state, bot.id, continent) * 18) +
+            (eliminatesOpponent ? 48 : 0) +
+            (repeatsBattle ? 14 : 0) - to.armies * 2;
+          return { from: fromDefinition.id, to: toId, score, safeEnough };
         });
-    }).sort((left, right) => right.score - left.score || left.to.localeCompare(right.to));
+    }).filter((candidate) => candidate.safeEnough)
+      .sort((left, right) => right.score - left.score || left.to.localeCompare(right.to));
     const attack = candidates[0];
     return attack
       ? { type: "attack", from: attack.from, to: attack.to }
@@ -843,7 +909,8 @@ const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
     const borderTargets = ownedTerritories(state, bot.id)
       .filter((territory) => bordersEnemy(state, territory.id, bot.id))
       .sort((left, right) =>
-        state.territories[left.id].armies - state.territories[right.id].armies ||
+        (enemyPressure(state, bot.id, right.id) - state.territories[right.id].armies) -
+          (enemyPressure(state, bot.id, left.id) - state.territories[left.id].armies) ||
         botTerritoryScore(state, bot, right.id) - botTerritoryScore(state, bot, left.id),
       );
     for (const target of borderTargets) {
@@ -860,7 +927,7 @@ const chooseBotAction = (state: GameState, bot: GamePlayer): GameAction => {
           type: "fortify",
           from: source.territory.id,
           to: target.id,
-          amount: Math.max(1, Math.ceil(source.movable / 2)),
+          amount: source.movable,
         };
       }
     }
@@ -944,14 +1011,6 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(state.phase === "lobby", "La partita è già iniziata.");
     assertRule(state.hostId === playerId, "Solo chi ospita può iniziare.");
     initializeGame(state);
-    return state;
-  }
-
-  if (action.type === "rematch") {
-    assertRule(state.phase === "gameover", "La rivincita è disponibile a partita conclusa.");
-    assertRule(state.hostId === playerId, "Solo chi ospita può avviare la rivincita.");
-    initializeGame(state);
-    logItem(state, `${actor.name} ha avviato una rivincita.`, "turn");
     return state;
   }
 
@@ -1084,9 +1143,14 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(from?.ownerId === playerId, "Il territorio di partenza non è tuo.");
     assertRule(to && to.ownerId !== playerId, "Scegli un territorio avversario.");
     assertRule(TERRITORY_BY_ID[action.from].adjacent.includes(action.to), "I territori non confinano.");
+    const hasOtherEnemyBorder = TERRITORY_BY_ID[action.from].adjacent.some(
+      (territoryId) => territoryId !== action.to && state.territories[territoryId].ownerId !== playerId,
+    );
     assertRule(
-      canAttackMatchup(from.armies, to.armies),
-      from.armies === 2
+      canAttackWithGarrison(from.armies, to.armies, hasOtherEnemyBorder),
+      hasOtherEnemyBorder && from.armies < 3
+        ? "Da questo fronte non puoi attaccare: in caso di conquista non riusciresti a lasciare 2 armate contro l'altro nemico."
+        : from.armies === 2
         ? "Con 2 armate puoi attaccare soltanto un territorio presidiato da 1 armata."
         : from.armies === 3
           ? "Con 3 armate puoi attaccare soltanto un territorio presidiato da 1 o 2 armate."
@@ -1119,9 +1183,8 @@ export const applyGameAction = (original: GameState, playerId: string, action: G
     assertRule(amount >= move.min && amount <= move.max, "Quantità di armate non valida.");
     const sourceAfterMove = state.territories[move.from].armies - amount;
     const sourceBordersEnemy = bordersEnemy(state, move.from, playerId);
-    const forcedSingleArmyException = move.forcedException && amount === move.min && sourceAfterMove === 1;
     assertRule(
-      !sourceBordersEnemy || sourceAfterMove >= 2 || forcedSingleArmyException,
+      !sourceBordersEnemy || sourceAfterMove >= 2,
       "Un territorio confinante con un nemico deve conservare almeno 2 armate.",
     );
     state.territories[move.from].armies -= amount;
